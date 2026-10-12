@@ -1,0 +1,60 @@
+name: Release web
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pack the viewable site
+        run: |
+          set -euo pipefail
+          mkdir -p site/data site/maps
+          cp index.html site/index.html
+          cp data/db.json site/data/db.json
+          cp -a icons site/icons
+          cp maps/pinewood.png maps/refinery.png maps/dragonvault.png site/maps/
+          if [ -f EXTRACT.md ]; then cp EXTRACT.md site/EXTRACT.md; fi
+          python3 - <<'PY'
+          import os
+          required = [
+              "site/index.html",
+              "site/data/db.json",
+              "site/maps/pinewood.png",
+              "site/maps/refinery.png",
+              "site/maps/dragonvault.png",
+          ]
+          missing = [path for path in required if not os.path.isfile(path)]
+          icons = [name for name in os.listdir("site/icons") if name.lower().endswith(".png")]
+          if missing or not icons:
+              raise SystemExit(f"site pack incomplete: missing={missing} icons={len(icons)}")
+          print(f"packed icons {len(icons)}")
+          PY
+          (cd site && zip -qr ../Vaultbreakers-loot-wiki.zip .)
+
+      - name: Name the release
+        id: rel
+        run: echo "name=网页 ${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: web-${{ github.sha }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.rel.outputs.name }}
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: Vaultbreakers-loot-wiki.zip
+          body: |
+            解压后双击 index.html 即可查看，不需要安装游戏。
+            压缩包只含页面、数据和三张小地图。
