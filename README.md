@@ -1,0 +1,37 @@
+# 龙窟破坏者掉落表
+
+Steam 测试版《Vaultbreakers》的资料页。掉落表、怪物、搜刮点、物品，以及狼林、精炼厂、龙窟三张小地图，都从本地客户端的配置和贴图整理出来。名称用游戏内简体中文。客户端没有译文的条目仍显示原文。
+
+作者 elmagnifico。页面版本 v0.1，对应的测试版写在页面页眉。
+
+## 查看
+
+到 [Releases](https://github.com/elmagnificogi/VaultbreakersWiki/releases) 下载最新的 `Vaultbreakers-loot-wiki.zip`，解压后双击 `index.html`。
+
+也可以克隆本仓库，直接用浏览器打开仓库里的 `index.html`。图标、地图和 `data/db.json` 用的是相对路径，这些目录要留在 `index.html` 旁边。
+
+页面有四个分页：
+
+- **掉落表**：每张表的条目、数量和几率
+- **怪物与搜刮点**：谁掉这张表，或哪个箱子用这张表
+- **物品**：出现在哪些掉落里
+- **地图**：固定搜刮点、传送门和撤离点。点搜刮点可以打开对应掉落。菱形是场景里的传送门，方块是撤离点
+
+搜索框可以按怪物、箱子、物品或掉落表查找。从物品跳转到掉落表时，搜索词保持不变。
+
+## 自动打包
+
+推送到 `main` 之后，GitHub Actions 会把可直接打开的页面打成 `Vaultbreakers-loot-wiki.zip`，挂到这次提交的 Release 上。标签是 `web-` 加上提交哈希。
+
+压缩包里有 `index.html`、`data/db.json`、`icons/`、三张小地图和本说明。没有游戏本体、资源包或反编译结果。
+
+## 重新生成
+
+需要本机已经安装这个 Steam 测试版，并且本目录放在游戏目录里面。在本目录执行：
+
+```
+npm install
+node extract.js
+```
+
+页面只由 `extract.js` 生成。要改页面内容，改脚本后再跑上面的命令。已经导出的图标和小地图不会再次翻转。解包、中文对照和小地图坐标的细节写在 [EXTRACT.md](EXTRACT.md)。
