@@ -21,6 +21,7 @@ jobs:
           set -euo pipefail
           mkdir -p site/data site/maps
           cp index.html site/index.html
+          cp README.md site/README.md
           cp data/db.json site/data/db.json
           cp -a icons site/icons
           cp maps/pinewood.png maps/refinery.png maps/dragonvault.png site/maps/
