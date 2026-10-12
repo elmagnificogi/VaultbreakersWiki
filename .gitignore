@@ -1,0 +1,12 @@
+node_modules/
+il2cpp/dump.cs
+.env
+.env.*
+probe-ser.js
+_*.js
+_scan.json
+_probe-out.txt
+_*.txt
+maps/*-check.png
+maps/crop-*.png
+maps/cover-*.png
