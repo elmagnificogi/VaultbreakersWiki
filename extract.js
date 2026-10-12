@@ -463,6 +463,10 @@ function main() {
       }
       const name = asString(value["#427"]);
       if (!name || value.m_TextureFormat == null) continue;
+      const outName = name.replace(/[^\w.\-]+/g, "_") + ".png";
+      const outPath = path.join(iconDir, outName);
+      icons[name.toLowerCase()] = "icons/" + outName;
+      if (fs.existsSync(outPath)) continue;
       const stream = value.m_StreamData;
       const size = stream && Number(stream["#795"] || 0);
       const offset = stream ? Number(stream.offset) : 0;
@@ -470,12 +474,9 @@ function main() {
       const rgba = decodeTexture(value.m_TextureFormat, portraitRes.subarray(offset, offset + size), value.m_Width, value.m_Height);
       if (!rgba) continue;
       const upright = rotate180(rgba, value.m_Width, value.m_Height);
-      const outName = name.replace(/[^\w.\-]+/g, "_") + ".png";
-      const outPath = path.join(iconDir, outName);
       const png = new PNG({ width: value.m_Width, height: value.m_Height });
       png.data = upright;
       fs.writeFileSync(outPath, PNG.sync.write(png));
-      icons[name.toLowerCase()] = "icons/" + outName;
       extraPortraits++;
     }
   }
@@ -687,6 +688,11 @@ function main() {
   function localizedItemTitle(enumName, fallback) {
     const exact = textForAsset(enumName + "ConfigurationAsset");
     if (exact) return exact;
+    const linkedAssets = {
+      ConsumableExplosiveBarrel: "ExplodableBarrelItemConfigurationAsset",
+    };
+    const linked = textForAsset(linkedAssets[enumName] || "");
+    if (linked && /[\u4e00-\u9fff]/.test(linked)) return linked;
     const hits = aliasAssets.get(assetAlias(enumName)) || [];
     if (hits.length === 1) return textForAsset(hits[0]) || fallback;
     return fallback;
@@ -1110,6 +1116,9 @@ function main() {
     "Area9 - Crypt": "MapName_Crypt",
     "Area6 - GY_Circle": "MapName_GraveYard",
     "Area3 - ScratAirship": "MapName_Airship",
+    "Area4 - MageTower": "MapName_AncientTower",
+    "Area1-Cave": "MapName_ElementalCave",
+    "Area 2 Warforge": "MapName_RatbosWarforge",
   };
   function regionTitle(raw) {
     const zh = byKey.get(regionNameKeys[raw] || "");
@@ -1233,9 +1242,17 @@ function writeHtml(db) {
   .tabs button { background:transparent; color:var(--muted); border:0; border-bottom:2px solid transparent; padding:8px 12px; cursor:pointer; }
   .tabs button.on { color:var(--accent); border-color:var(--accent); }
   a { color:#8eb6ff; cursor:pointer; }
-  .mapwrap { position:relative; max-width:960px; margin-top:12px; }
-  .mapwrap img { width:100%; height:auto; display:block; border-radius:8px; background:#0e1118; }
-  .mapwrap svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .mapzoom { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+  .zoom-btn { background:#1c2030; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 14px; cursor:pointer; font:inherit; font-weight:700; }
+  .zoom-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .zoom-btn:disabled { opacity:.4; cursor:default; color:var(--muted); border-color:var(--line); }
+  .zoom-readout { color:var(--muted); min-width:52px; font-variant-numeric:tabular-nums; }
+  .mapwrap { position:relative; max-width:960px; margin-top:8px; overflow:auto; border-radius:8px; background:#0e1118; touch-action:none; }
+  .mapwrap.dragging, .mapwrap.dragging .pin { cursor:grabbing; }
+  .mapsizer { width:0; height:0; pointer-events:none; }
+  .mapstage { position:relative; width:100%; transform-origin:0 0; cursor:grab; }
+  .mapstage img { width:100%; height:100%; display:block; background:#0e1118; }
+  .mapstage svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .region-label { position:absolute; z-index:1; transform:translate(-50%,-50%); font-size:13px; font-weight:700; color:#fff; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
   .pin { position:absolute; z-index:2; width:12px; height:12px; margin:0; padding:0; border:1px solid #111; border-radius:50%; transform:translate(-50%,-50%); cursor:pointer; }
   .pin:hover { outline:2px solid #fff; z-index:2; }
@@ -1243,8 +1260,8 @@ function writeHtml(db) {
   .gate.extract { background:#e07a7a; border-radius:2px; transform:translate(-50%,-50%); }
   .gate-label { position:absolute; z-index:4; transform:translate(8px,-50%); font-size:12px; font-weight:700; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
   .legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .pin-filter { border:1px solid var(--line); background:#0e1118; color:var(--text); }
-  .pin-filter.on { border-color:var(--accent); }
+  .region-filter, .pin-filter, .gate-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
+  .region-filter.on, .pin-filter.on, .gate-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } aside, section { max-height:none; } }
 </style>
@@ -1278,6 +1295,7 @@ const qEl = document.getElementById("q");
 const catEl = document.getElementById("cat");
 let mode = "tables";
 let current = null;
+let mapObserver = null;
 const cats = ["全部", ...new Set([...db.dropTables.map(t => t.category), ...db.sources.map(s => s.category)])].sort();
 catEl.innerHTML = cats.map(c => '<option>'+c+'</option>').join("");
 function icon(src, alt) {
@@ -1444,69 +1462,183 @@ function open(row) {
     const regions = row.regions || [];
     const q = qEl.value.trim().toLowerCase();
     const mapHit = !q || row.title.toLowerCase().includes(q);
-    const regionLegend = regions.map((region, index) => '<button type="button" class="tag region-filter" data-title="'+esc(region.title)+'"><span class="dot" style="background:'+regionColors[index % regionColors.length]+'"></span>'+esc(region.title)+'</button>').join("");
-    const legend = titles.map(title => '<button type="button" class="tag pin-filter" data-title="'+esc(title)+'"><span class="dot" style="background:'+colorOf(title)+'"></span>'+esc(title)+'</button>').join("");
+    const regionLegend = regions.map((region, index) => '<button type="button" class="tag region-filter on" data-key="'+index+'" aria-pressed="true" data-title="'+esc(region.title)+'"><span class="dot" style="background:'+regionColors[index % regionColors.length]+'"></span>'+esc(region.title)+'</button>').join("");
+    const legend = titles.map(title => '<button type="button" class="tag pin-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:'+colorOf(title)+'"></span>'+esc(title)+'</button>').join("");
     const shapes = regions.map((region, index) => {
       const color = regionColors[index % regionColors.length];
       const polys = region.paths.map(path => '<polygon points="'+path.map(p => p.left+","+p.top).join(" ")+'" fill="'+color+'" fill-opacity="0.16" stroke="'+color+'" stroke-width="0.28" stroke-linejoin="round"></polygon>').join("");
-      return '<g data-title="'+esc(region.title)+'">'+polys+'</g>';
+      return '<g data-key="'+index+'" data-title="'+esc(region.title)+'">'+polys+'</g>';
     }).join("");
-    const labels = regions.map((region, index) => '<div class="region-label" data-title="'+esc(region.title)+'" style="left:'+region.left+'%;top:'+region.top+'%;color:'+regionColors[index % regionColors.length]+'">'+esc(region.title)+'</div>').join("");
+    const labels = regions.map((region, index) => '<div class="region-label" data-key="'+index+'" data-title="'+esc(region.title)+'" style="left:'+region.left+'%;top:'+region.top+'%;color:'+regionColors[index % regionColors.length]+'">'+esc(region.title)+'</div>').join("");
     const dots = row.pins.map(pin => {
       const shown = mapHit || pin.title.toLowerCase().includes(q);
-      return '<button type="button" class="pin" data-loot="'+pin.table+'" data-title="'+esc(pin.title)+'" title="'+esc(pin.title)+'" style="left:'+pin.left+'%;top:'+pin.top+'%;background:'+colorOf(pin.title)+';display:'+(shown?"":"none")+'"></button>';
+      return '<button type="button" class="pin" data-loot="'+pin.table+'" data-key="'+esc(pin.title)+'" data-title="'+esc(pin.title)+'" title="'+esc(pin.title)+'" style="left:'+pin.left+'%;top:'+pin.top+'%;background:'+colorOf(pin.title)+';display:'+(shown?"":"none")+'"></button>';
     }).join("");
     const entrances = row.entrances || [];
     const gateNudges = entrances.map((entrance, index) => entrances.slice(0, index).filter(other => Math.abs(other.left - entrance.left) < 4 && Math.abs(other.top - entrance.top) < 8).length);
-    const gateLegend = entrances.map(entrance => '<button type="button" class="tag gate-filter" data-title="'+esc(entrance.title)+'"><span class="dot" style="background:'+(entrance.kind==="extract"?"#e07a7a":"#f7dc6f")+'"></span>'+esc(entrance.title)+'</button>').join("");
+    const gateLegend = entrances.map((entrance, index) => '<button type="button" class="tag gate-filter on" data-key="'+index+'" aria-pressed="true" data-title="'+esc(entrance.title)+'"><span class="dot" style="background:'+(entrance.kind==="extract"?"#e07a7a":"#f7dc6f")+'"></span>'+esc(entrance.title)+'</button>').join("");
     const gates = entrances.map((entrance, index) => {
       const shown = mapHit || (entrance.title + " " + entrance.detail).toLowerCase().includes(q);
       const color = entrance.kind === "extract" ? "#e07a7a" : "#f7dc6f";
       const tip = entrance.detail ? entrance.title + "：" + entrance.detail : entrance.title;
       const labelShift = entrance.left > 70 ? "translate(calc(-100% - 8px),-50%)" : "translate(8px,-50%)";
-      return '<div class="gate'+(entrance.kind==="extract"?" extract":"")+'" data-title="'+esc(entrance.title)+'" title="'+esc(tip)+'" style="left:'+entrance.left+'%;top:'+entrance.top+'%;display:'+(shown?"":"none")+'"></div>'
-        + '<div class="gate-label" data-title="'+esc(entrance.title)+'" style="left:'+entrance.left+'%;top:'+entrance.top+'%;transform:'+labelShift+';margin-top:'+(gateNudges[index]*15)+'px;color:'+color+';display:'+(shown?"":"none")+'">'+esc(entrance.title)+'</div>';
+      return '<div class="gate'+(entrance.kind==="extract"?" extract":"")+'" data-key="'+index+'" data-title="'+esc(entrance.title)+'" data-detail="'+esc(entrance.detail)+'" title="'+esc(tip)+'" style="left:'+entrance.left+'%;top:'+entrance.top+'%;display:'+(shown?"":"none")+'"></div>'
+        + '<div class="gate-label" data-key="'+index+'" data-title="'+esc(entrance.title)+'" data-detail="'+esc(entrance.detail)+'" style="left:'+entrance.left+'%;top:'+entrance.top+'%;transform:'+labelShift+';margin-top:'+(gateNudges[index]*15)+'px;color:'+color+';display:'+(shown?"":"none")+'">'+esc(entrance.title)+'</div>';
     }).join("");
     const note = [
       regions.length ? "区域轮廓 "+regions.length+" 块，沿遮罩贴图边缘描出，并去掉落在纯色空地上、以及横跨空地的部分。" : "",
       entrances.length ? "入口 "+entrances.length+" 处：菱形是场景里的传送门，方块是撤离点。" : "这张地图的场景里没有写死的传送门或撤离点。",
       row.pins.length ? "固定搜刮点 "+row.pins.length+" 处，点标记打开对应掉落。" : "这张地图的场景里没有写死的搜刮点坐标。",
     ].filter(Boolean).join("");
-    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+(regionLegend?'<div class="legend">'+regionLegend+'</div>':'')+(gateLegend?'<div class="legend">'+gateLegend+'</div>':'')+(legend?'<div class="legend">'+legend+'</div>':'')+'<div class="mapwrap"><img alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+'</svg>'+labels+gates+dots+'</div>';
+    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+(regionLegend?'<div class="legend">'+regionLegend+'</div>':'')+(gateLegend?'<div class="legend">'+gateLegend+'</div>':'')+(legend?'<div class="legend">'+legend+'</div>':'')+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+'</svg>'+labels+gates+dots+'</div><div class="mapsizer"></div></div>';
     bindJumps(detailEl);
-    let only = "";
-    let onlyRegion = "";
+    function checkedKeys(selector) {
+      const buttons = [...detailEl.querySelectorAll(selector)];
+      const on = new Set(buttons.filter(btn => btn.classList.contains("on")).map(btn => btn.dataset.key));
+      return { buttons, on };
+    }
+    function showIf(el, picked) {
+      const text = (el.dataset.title + " " + (el.dataset.detail || "")).toLowerCase();
+      const matched = mapHit || text.includes(q);
+      const shown = (!picked.buttons.length || picked.on.has(el.dataset.key)) && matched;
+      el.style.display = shown ? "" : "none";
+    }
     function applyRegions() {
-      detailEl.querySelectorAll("svg g, .region-label").forEach(el => {
-        const matched = mapHit || el.dataset.title.toLowerCase().includes(q);
-        el.style.display = matched && (!onlyRegion || el.dataset.title === onlyRegion) ? "" : "none";
-      });
+      const picked = checkedKeys(".region-filter");
+      detailEl.querySelectorAll(".mapstage svg g, .mapstage .region-label").forEach(el => showIf(el, picked));
     }
-    applyRegions();
-    detailEl.querySelectorAll(".region-filter").forEach(btn => btn.onclick = () => {
-      onlyRegion = onlyRegion === btn.dataset.title ? "" : btn.dataset.title;
-      detailEl.querySelectorAll(".region-filter").forEach(other => other.classList.toggle("on", other === btn && onlyRegion === btn.dataset.title));
-      applyRegions();
-    });
-    let onlyGate = "";
     function applyGates() {
-      detailEl.querySelectorAll(".gate, .gate-label").forEach(el => {
-        const matched = mapHit || el.dataset.title.toLowerCase().includes(q);
-        el.style.display = matched && (!onlyGate || el.dataset.title === onlyGate) ? "" : "none";
+      const picked = checkedKeys(".gate-filter");
+      detailEl.querySelectorAll(".mapstage .gate, .mapstage .gate-label").forEach(el => showIf(el, picked));
+    }
+    function applyPins() {
+      const picked = checkedKeys(".pin-filter");
+      detailEl.querySelectorAll(".mapstage .pin").forEach(el => showIf(el, picked));
+    }
+    function bindChecks(selector, apply) {
+      detailEl.querySelectorAll(selector).forEach(btn => btn.onclick = () => {
+        const next = !btn.classList.contains("on");
+        btn.classList.toggle("on", next);
+        btn.setAttribute("aria-pressed", next ? "true" : "false");
+        apply();
       });
     }
-    detailEl.querySelectorAll(".gate-filter").forEach(btn => btn.onclick = () => {
-      onlyGate = onlyGate === btn.dataset.title ? "" : btn.dataset.title;
-      detailEl.querySelectorAll(".gate-filter").forEach(other => other.classList.toggle("on", other === btn && onlyGate === btn.dataset.title));
-      applyGates();
+    bindChecks(".region-filter", applyRegions);
+    bindChecks(".gate-filter", applyGates);
+    bindChecks(".pin-filter", applyPins);
+    applyRegions();
+    applyGates();
+    applyPins();
+    const mapwrap = detailEl.querySelector(".mapwrap");
+    const mapstage = detailEl.querySelector(".mapstage");
+    const mapsizer = detailEl.querySelector(".mapsizer");
+    const zoomReadout = detailEl.querySelector(".zoom-readout");
+    const zoomIn = detailEl.querySelector('[data-zoom="in"]');
+    const zoomOut = detailEl.querySelector('[data-zoom="out"]');
+    const zoomReset = detailEl.querySelector('[data-zoom="reset"]');
+    const mapImg = mapstage.querySelector("img");
+    let scale = 1;
+    let fitted = "";
+    const minScale = 1;
+    const maxScale = 8;
+    function applyScale(next, anchor) {
+      const prev = scale || 1;
+      scale = Math.min(maxScale, Math.max(minScale, next));
+      zoomReadout.textContent = Math.round(scale * 100) + "%";
+      zoomIn.disabled = scale >= maxScale - 0.001;
+      zoomOut.disabled = scale <= minScale + 0.001;
+      const viewW = mapwrap.clientWidth;
+      if (!viewW || !mapImg.naturalWidth) return;
+      const baseH = Math.max(1, Math.round(viewW * mapImg.naturalHeight / mapImg.naturalWidth));
+      const box = viewW + "x" + baseH + "@" + scale;
+      if (!anchor && box === fitted) return;
+      fitted = box;
+      let ax = 0;
+      let ay = 0;
+      let localX = 0;
+      let localY = 0;
+      if (anchor) {
+        const rect = mapwrap.getBoundingClientRect();
+        ax = anchor.x - rect.left;
+        ay = anchor.y - rect.top;
+        localX = ax + mapwrap.scrollLeft;
+        localY = ay + mapwrap.scrollTop;
+      }
+      mapstage.style.position = "absolute";
+      mapstage.style.left = "0";
+      mapstage.style.top = "0";
+      mapstage.style.width = viewW + "px";
+      mapstage.style.height = baseH + "px";
+      mapstage.style.transformOrigin = "0 0";
+      mapstage.style.transform = "scale(" + scale + ")";
+      mapsizer.style.width = Math.round(viewW * scale) + "px";
+      mapsizer.style.height = Math.round(baseH * scale) + "px";
+      mapwrap.style.height = baseH + "px";
+      if (anchor) {
+        const k = scale / prev;
+        mapwrap.scrollLeft = localX * k - ax;
+        mapwrap.scrollTop = localY * k - ay;
+      }
+    }
+    function centerAnchor() {
+      const rect = mapwrap.getBoundingClientRect();
+      return { x: rect.left + mapwrap.clientWidth / 2, y: rect.top + mapwrap.clientHeight / 2 };
+    }
+    zoomIn.onclick = () => applyScale(scale * 1.25, centerAnchor());
+    zoomOut.onclick = () => applyScale(scale / 1.25, centerAnchor());
+    zoomReset.onclick = () => {
+      mapwrap.scrollLeft = 0;
+      mapwrap.scrollTop = 0;
+      applyScale(1);
+    };
+    if (mapImg.complete && mapImg.naturalWidth) applyScale(1);
+    mapImg.addEventListener("load", () => applyScale(scale));
+    if (mapObserver) mapObserver.disconnect();
+    mapObserver = new ResizeObserver(() => {
+      if (!mapwrap.isConnected) { mapObserver.disconnect(); mapObserver = null; return; }
+      applyScale(scale);
     });
-    detailEl.querySelectorAll(".pin-filter").forEach(btn => btn.onclick = () => {
-      only = only === btn.dataset.title ? "" : btn.dataset.title;
-      detailEl.querySelectorAll(".pin-filter").forEach(other => other.classList.toggle("on", other === btn && only === btn.dataset.title));
-      detailEl.querySelectorAll(".pin").forEach(pin => {
-        const matched = mapHit || pin.dataset.title.toLowerCase().includes(q);
-        pin.style.display = matched && (!only || pin.dataset.title === only) ? "" : "none";
-      });
+    mapObserver.observe(mapwrap);
+    mapwrap.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      applyScale(scale * factor, { x: event.clientX, y: event.clientY });
+    }, { passive: false });
+    let drag = null;
+    function onDragMove(event) {
+      if (!drag || drag.id !== event.pointerId) return;
+      const dx = event.clientX - drag.x;
+      const dy = event.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      if (!drag.moved) return;
+      mapwrap.scrollLeft = drag.sl - dx;
+      mapwrap.scrollTop = drag.st - dy;
+    }
+    function onDragEnd(event) {
+      if (!drag || drag.id !== event.pointerId) return;
+      const moved = drag.moved;
+      drag = null;
+      mapwrap.classList.remove("dragging");
+      window.removeEventListener("pointermove", onDragMove);
+      window.removeEventListener("pointerup", onDragEnd);
+      window.removeEventListener("pointercancel", onDragEnd);
+      if (!moved) return;
+      const stop = (clickEvent) => {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+        mapwrap.removeEventListener("click", stop, true);
+      };
+      mapwrap.addEventListener("click", stop, true);
+      setTimeout(() => mapwrap.removeEventListener("click", stop, true), 0);
+    }
+    mapwrap.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      if (!event.target.closest(".mapstage")) return;
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, sl: mapwrap.scrollLeft, st: mapwrap.scrollTop, moved: false };
+      mapwrap.classList.add("dragging");
+      window.addEventListener("pointermove", onDragMove);
+      window.addEventListener("pointerup", onDragEnd);
+      window.addEventListener("pointercancel", onDragEnd);
     });
   }
 }

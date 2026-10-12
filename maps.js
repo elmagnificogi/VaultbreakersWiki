@@ -115,11 +115,13 @@ function asFloat(n) {
 }
 
 function toMapPercent(x, z, offsetX, offsetY, sizeX, sizeY) {
+  // Camera-aligned percent, then one 90° clockwise turn so the page matches the in-game map.
+  // Screen y grows downward: left' = 100 - top, top' = left.
   const u = (x - offsetX) / sizeX;
   const v = (z - offsetY) / sizeY;
-  const left = (1 - u) * 100;
+  const left = u * 100;
   const top = (1 - v) * 100;
-  return { left: top, top: 100 - left };
+  return { left: 100 - top, top: left };
 }
 
 function quatRotate(q, v) {
@@ -217,40 +219,34 @@ function exportMinimap(def, outFile) {
   const raw = extractRange(buf, info, res.offset + offset, size);
   const rgba = decodeTexture(value.m_TextureFormat, raw, value.m_Width, value.m_Height);
   if (!rgba) throw new Error("minimap decode " + def.id);
-  const png = new PNG({ width: value.m_Width, height: value.m_Height });
-  const upright = rotate180(rgba, value.m_Width, value.m_Height);
-  png.data = rotateCCW90(upright, value.m_Width, value.m_Height);
+  const upright = flipVertical(rgba, value.m_Width, value.m_Height);
+  const turned = rotateCW90(upright, value.m_Width, value.m_Height);
+  const png = new PNG({ width: turned.width, height: turned.height });
+  // Unity stores the DXT blocks bottom-up. Flip vertically, then rotate 90° clockwise
+  // once. Existing files are skipped, so a later extract must not turn them again.
+  png.data = turned.data;
   fs.writeFileSync(outFile, PNG.sync.write(png));
 }
 
-function rotateCCW90(rgba, width, height) {
+function rotateCW90(rgba, width, height) {
   const out = Buffer.alloc(rgba.length);
+  const dstWidth = height;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const src = (y * width + x) * 4;
-      const nx = y;
-      const ny = width - 1 - x;
-      const dst = (ny * height + nx) * 4;
-      out[dst] = rgba[src];
-      out[dst + 1] = rgba[src + 1];
-      out[dst + 2] = rgba[src + 2];
-      out[dst + 3] = rgba[src + 3];
+      const dx = height - 1 - y;
+      const dy = x;
+      rgba.copy(out, (dy * dstWidth + dx) * 4, src, src + 4);
     }
   }
-  return out;
+  return { data: out, width: height, height: width };
 }
 
-function rotate180(rgba, width, height) {
+function flipVertical(rgba, width, height) {
   const out = Buffer.alloc(rgba.length);
+  const stride = width * 4;
   for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const src = (y * width + x) * 4;
-      const dst = ((height - 1 - y) * width + (width - 1 - x)) * 4;
-      out[dst] = rgba[src];
-      out[dst + 1] = rgba[src + 1];
-      out[dst + 2] = rgba[src + 2];
-      out[dst + 3] = rgba[src + 3];
-    }
+    rgba.copy(out, (height - 1 - y) * stride, y * stride, (y + 1) * stride);
   }
   return out;
 }
@@ -529,7 +525,70 @@ function collectEntrances(def) {
       at += needle.length;
     }
   }
+  const mapFile = path.join(__dirname, "maps", def.id + ".png");
+  if (fs.existsSync(mapFile)) {
+    const png = PNG.sync.read(fs.readFileSync(mapFile));
+    for (const point of found) {
+      const mode = point.kind === "extract" ? "gate" : point.titleKey === "Name_AdvancedNpc_PortalWolfswood3" ? "field" : "";
+      const snapped = mode ? snapSouthOntoMap(png, point.left, point.top, mode) : null;
+      if (!snapped) continue;
+      point.left = snapped.left;
+      point.top = snapped.top;
+    }
+  }
   return found;
+}
+
+function voidPixel(png, x, y) {
+  const i = (y * png.width + x) * 4;
+  const dr = png.data[i] - 24;
+  const dg = png.data[i + 1] - 16;
+  const db = png.data[i + 2] - 12;
+  return dr * dr + dg * dg + db * db < 400;
+}
+
+function mapPercent(png, x, y) {
+  return {
+    left: Math.round(x / (png.width - 1) * 1000) / 10,
+    top: Math.round(y / (png.height - 1) * 1000) / 10,
+  };
+}
+
+// The authored pivots sit north of the landmarks: the solo extract rune is on the
+// road above the map entrance, and the pine-fields portal is inside the rice plot.
+// Move only those markers south onto the entrance light or the field's south edge.
+function snapSouthOntoMap(png, left, top, mode) {
+  const x0 = Math.round(left / 100 * (png.width - 1));
+  const y0 = Math.round(top / 100 * (png.height - 1));
+  if (mode === "gate") {
+    let best = null;
+    for (let y = y0; y < Math.min(png.height, y0 + 220); y++) {
+      for (let x = x0 - 30; x <= x0 + 30; x++) {
+        if (x < 0 || x >= png.width || voidPixel(png, x, y)) continue;
+        const i = (y * png.width + x) * 4;
+        const r = png.data[i];
+        const g = png.data[i + 1];
+        if (r < 160 || g < 120) continue;
+        const sum = r + g + png.data[i + 2];
+        if (!best || sum > best.sum) best = { x, y, sum };
+      }
+    }
+    if (best && best.y - y0 >= 40) return mapPercent(png, best.x, best.y);
+  }
+  let last = y0;
+  let dark = 0;
+  for (let y = y0; y < Math.min(png.height, y0 + 220); y++) {
+    const i = (y * png.width + x0) * 4;
+    const sum = png.data[i] + png.data[i + 1] + png.data[i + 2];
+    if (sum > 180) {
+      last = y;
+      dark = 0;
+    } else if (++dark >= 8) {
+      break;
+    }
+  }
+  if (last - y0 < 40) return null;
+  return mapPercent(png, x0, last);
 }
 
 const COVER_BUNDLES = {
