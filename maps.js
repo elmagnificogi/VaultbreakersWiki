@@ -115,13 +115,11 @@ function asFloat(n) {
 }
 
 function toMapPercent(x, z, offsetX, offsetY, sizeX, sizeY) {
-  // Camera-aligned percent, then one 90° clockwise turn so the page matches the in-game map.
-  // Screen y grows downward: left' = 100 - top, top' = left.
+  // Minimap camera looks down. Right is world +X, up is world +Z.
+  // This matches the in-game world map: farmland on the right, extract on the southeast shore.
   const u = (x - offsetX) / sizeX;
   const v = (z - offsetY) / sizeY;
-  const left = u * 100;
-  const top = (1 - v) * 100;
-  return { left: 100 - top, top: left };
+  return { left: u * 100, top: (1 - v) * 100 };
 }
 
 function quatRotate(q, v) {
@@ -219,27 +217,11 @@ function exportMinimap(def, outFile) {
   const raw = extractRange(buf, info, res.offset + offset, size);
   const rgba = decodeTexture(value.m_TextureFormat, raw, value.m_Width, value.m_Height);
   if (!rgba) throw new Error("minimap decode " + def.id);
-  const upright = flipVertical(rgba, value.m_Width, value.m_Height);
-  const turned = rotateCW90(upright, value.m_Width, value.m_Height);
-  const png = new PNG({ width: turned.width, height: turned.height });
-  // Unity stores the DXT blocks bottom-up. Flip vertically, then rotate 90° clockwise
-  // once. Existing files are skipped, so a later extract must not turn them again.
-  png.data = turned.data;
+  const png = new PNG({ width: value.m_Width, height: value.m_Height });
+  // Unity stores the DXT blocks bottom-up. One vertical flip puts high world Z at the top.
+  // Existing files are skipped, so a later extract must not flip them again.
+  png.data = flipVertical(rgba, value.m_Width, value.m_Height);
   fs.writeFileSync(outFile, PNG.sync.write(png));
-}
-
-function rotateCW90(rgba, width, height) {
-  const out = Buffer.alloc(rgba.length);
-  const dstWidth = height;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const src = (y * width + x) * 4;
-      const dx = height - 1 - y;
-      const dy = x;
-      rgba.copy(out, (dy * dstWidth + dx) * 4, src, src + 4);
-    }
-  }
-  return { data: out, width: height, height: width };
 }
 
 function flipVertical(rgba, width, height) {
@@ -539,6 +521,46 @@ function collectEntrances(def) {
   return found;
 }
 
+function snapFieldEast(png, x0, y0) {
+  // The in-game icon sits on the crop block's northeast corner: void above and to the right,
+  // field immediately left and below. The village coastline further north is a different corner.
+  function sample(x, y) {
+    if (x < 0 || y < 0 || x >= png.width || y >= png.height) return [0, 0, 0];
+    const i = (y * png.width + x) * 4;
+    return [png.data[i], png.data[i + 1], png.data[i + 2]];
+  }
+  function isVoid(c) {
+    const dr = c[0] - 24;
+    const dg = c[1] - 16;
+    const db = c[2] - 12;
+    return dr * dr + dg * dg + db * db < 800;
+  }
+  function isLand(c) {
+    return c[0] + c[1] + c[2] > 120;
+  }
+  let best = null;
+  for (let y = y0 - 50; y <= y0 + 30; y += 2) {
+    for (let x = x0 + 20; x <= x0 + 220; x += 2) {
+      if (!isLand(sample(x, y))) continue;
+      let voidAbove = 0;
+      let voidRight = 0;
+      let landLeft = 0;
+      let landBelow = 0;
+      for (let k = 6; k <= 28; k += 4) {
+        if (isVoid(sample(x, y - k))) voidAbove++;
+        if (isVoid(sample(x + k, y))) voidRight++;
+        if (isLand(sample(x - k, y))) landLeft++;
+        if (isLand(sample(x, y + k))) landBelow++;
+      }
+      if (voidAbove < 4 || voidRight < 4 || landLeft < 3 || landBelow < 3) continue;
+      const score = x - Math.abs(y - y0) * 0.4;
+      if (!best || score > best.score) best = { x, y, score };
+    }
+  }
+  if (!best) return null;
+  return mapPercent(png, best.x, best.y);
+}
+
 function voidPixel(png, x, y) {
   const i = (y * png.width + x) * 4;
   const dr = png.data[i] - 24;
@@ -554,17 +576,17 @@ function mapPercent(png, x, y) {
   };
 }
 
-// The authored pivots sit north of the landmarks: the solo extract rune is on the
-// road above the map entrance, and the pine-fields portal is inside the rice plot.
-// Move only those markers south onto the entrance light or the field's south edge.
+// On the in-game world map both of these sit on the east edge.
+// The authored pivots fall inland: the pine-fields portal in the middle of 农田,
+// and the solo-extract rune west of the lit shore gate.
 function snapSouthOntoMap(png, left, top, mode) {
   const x0 = Math.round(left / 100 * (png.width - 1));
   const y0 = Math.round(top / 100 * (png.height - 1));
   if (mode === "gate") {
     let best = null;
-    for (let y = y0; y < Math.min(png.height, y0 + 220); y++) {
-      for (let x = x0 - 30; x <= x0 + 30; x++) {
-        if (x < 0 || x >= png.width || voidPixel(png, x, y)) continue;
+    for (let x = x0; x < Math.min(png.width, x0 + 280); x++) {
+      for (let y = y0 - 40; y <= y0 + 40; y++) {
+        if (y < 0 || y >= png.height || voidPixel(png, x, y)) continue;
         const i = (y * png.width + x) * 4;
         const r = png.data[i];
         const g = png.data[i + 1];
@@ -573,8 +595,9 @@ function snapSouthOntoMap(png, left, top, mode) {
         if (!best || sum > best.sum) best = { x, y, sum };
       }
     }
-    if (best && best.y - y0 >= 40) return mapPercent(png, best.x, best.y);
+    if (best && best.x - x0 >= 40) return mapPercent(png, best.x, best.y);
   }
+  if (mode === "field") return snapFieldEast(png, x0, y0);
   let last = y0;
   let dark = 0;
   for (let y = y0; y < Math.min(png.height, y0 + 220); y++) {
@@ -969,8 +992,10 @@ function collectRegions(def) {
                 const local = mesh.points[index];
                 if (!local) continue;
                 const rotated = quatRotate(placed.rot, [local[0] * placed.scale[0], local[1] * placed.scale[1], 0]);
-                const x = placed.pos[0] + rotated[0];
+                let x = placed.pos[0] + rotated[0];
                 const z = placed.pos[2] + rotated[2];
+                // The round courtyard on the baked minimap sits 26 world units east of this cover's pivot.
+                if (title === "Area4 - MageTower") x += 26;
                 const mapped = toMapPercent(x, z, bounds.offsetX, bounds.offsetY, bounds.sizeX, bounds.sizeY);
                 pathPts.push(mapped);
               }
