@@ -303,6 +303,7 @@ function main() {
   const sources = [];
   const nameIds = {};
   const assetMaps = {};
+  const iconFiles = {};
   let failed = 0;
   let read = 0;
   for (const obj of sf.objects) {
@@ -319,6 +320,7 @@ function main() {
     let shownId = 0;
     let mapIds = null;
     let portrait = "";
+    let iconFile = "";
     const strings = [];
     const tableRefs = [];
     let embedded = null;
@@ -337,6 +339,10 @@ function main() {
         const portraitName = asString(child);
         if (portraitName && portraitName !== "TempIcon") portrait = portraitName.replace(/\.png$/i, "");
       }
+      if (key === "IconFileName") {
+        const iconName = asString(child);
+        if (iconName && iconName !== "TempIcon") iconFile = iconName.replace(/\.png$/i, "");
+      }
       if (key === "Locations" && child && child._length > 0) mapIds = readMapIds(child);
       if (key === "DropTableConfigurationValues" && child && child.Elements && Array.isArray(child.Elements._fixedBuffer?.Value)) {
         embedded = child;
@@ -347,6 +353,7 @@ function main() {
     });
     if (assetName && nameKey) nameIds[assetName] = nameKey;
     if (assetName && mapIds && mapIds.length) assetMaps[assetName] = mapIds;
+    if (assetName && iconFile) iconFiles[assetName] = iconFile;
     if (!assetName) {
       walk(value, (key, child) => {
         if (assetName) return;
@@ -378,6 +385,7 @@ function main() {
         hints: [...new Set(strings)].slice(0, 6),
         shownId,
         portrait,
+        iconFile,
       });
     }
   }
@@ -710,8 +718,8 @@ function main() {
 
   function iconFor(name) {
     if (!name) return null;
-    const base = name.replace(/\.png$/i, "").replace(/_sprite$/i, "");
-    return icons[base.toLowerCase()] || icons[name.toLowerCase()] || null;
+    const base = String(name).replace(/\.png$/i, "").replace(/_sprite$/i, "").replace(/^.*[\\/]/, "").toLowerCase();
+    return icons[base] || null;
   }
 
   const itemList = Object.entries(items.nameToId)
@@ -726,10 +734,11 @@ function main() {
         english,
         places: placesForEnum(name),
         title: localizedItemTitle(name, english),
-        icon: iconFor(name) || iconFor(iconKey) || iconFor("RegularItem" + name) || iconFor("NamedItem" + name.replace(/^NamedItem/, "")) || null,
+        icon: iconFor(iconFiles[name + "ConfigurationAsset"]) || iconFor(iconFiles[name]) || iconFor(name) || iconFor(iconKey) || iconFor("RegularItem" + name) || iconFor("NamedItem" + name.replace(/^NamedItem/, "")) || null,
       };
     });
   const itemById = Object.fromEntries(itemList.map((it) => [it.id, it]));
+  console.log("item icons", itemList.filter((it) => it.icon).length, "of", itemList.length, "icon names", Object.keys(iconFiles).length);
   const tableById = {};
   for (const table of dropTables) {
     if (table.id != null) tableById[table.id] = table.enumName;
@@ -1077,7 +1086,7 @@ function main() {
   }
   for (const source of sources) {
     source.category = sourceCategory(source.title + " " + source.english + " " + source.asset);
-    source.icon = iconFor(source.portrait) || iconFor(String(source.portrait || "").replace(/_Portrait$/i, "")) || bestIcon(source.portrait, []) || null;
+    source.icon = iconFor(source.portrait) || iconFor(String(source.portrait || "").replace(/_Portrait$/i, "")) || bestIcon(source.portrait, []) || iconFor(source.iconFile) || iconFor(iconFiles[source.asset]) || null;
     if (/BahrasChest|BahraCache/.test(source.asset || "")) source.icon = "icons/ChestBahra.png";
   }
   console.log(
@@ -1242,6 +1251,7 @@ function writeHtml(db) {
   .search-history button:hover { background:#262c3e; }
   main { display:grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 78px); }
   aside { border-right:1px solid var(--line); overflow:auto; max-height: calc(100vh - 78px); }
+  .list-count { margin:0; padding:10px 12px 18px; color:var(--muted); font-size:12px; }
   .row { display:flex; gap:10px; align-items:center; width:100%; text-align:left; background:transparent; color:inherit; border:0; border-bottom:1px solid #262b3c; padding:8px 12px; cursor:pointer; }
   .row:hover, .row.active { background:#262c3e; }
   .row img, .entry img, .hero img { width:42px; height:42px; object-fit:contain; background:#0e1118; border-radius:6px; image-rendering:auto; }
@@ -1287,16 +1297,15 @@ function writeHtml(db) {
   <div>
     <h1>龙窟破坏者掉落表</h1>
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.1 · 对应游戏版本 1.0（Steam build 25803617） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p class="meta">作者 elmagnifico · 版本 v0.1 · 对应游戏版本 2.0.2137.110314（Steam build 25803617） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="search">
-    <input id="q" placeholder="搜索怪物、箱子、物品、掉落表" autocomplete="off" />
+    <input id="q" placeholder="搜索怪物、箱子、物品" autocomplete="off" />
     <div id="history" class="search-history" hidden></div>
   </div>
   <select id="cat"></select>
   <div class="tabs">
-    <button id="tab-tables" class="on">掉落表</button>
-    <button id="tab-sources">怪物与搜刮点</button>
+    <button id="tab-sources" class="on">怪物与搜刮点</button>
     <button id="tab-items">物品</button>
     <button id="tab-maps">地图</button>
   </div>
@@ -1318,8 +1327,7 @@ let current = null;
 let historyLock = false;
 let appliedUrl = "";
 let mapObserver = null;
-const cats = ["全部", ...new Set([...db.dropTables.map(t => t.category), ...db.sources.map(s => s.category)])].sort();
-catEl.innerHTML = cats.map(c => '<option>'+c+'</option>').join("");
+const lastByMode = { tables: null, sources: null, items: null, maps: null };
 function icon(src, alt) {
   if (!src) return '<img alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">';
   return '<img alt="'+(alt||"")+'" src="'+src+'">';
@@ -1330,6 +1338,19 @@ for (const t of db.dropTables) {
   if (t.id != null) tableById[t.id] = t;
   tableByEnum[t.enumName] = t;
 }
+const dropWords = {};
+function collectDropWords(table, depth, seen) {
+  if (!table || depth > 2 || seen.has(table.enumName)) return "";
+  seen.add(table.enumName);
+  return table.entries.map(entry => {
+    if (entry.outcome === 1) {
+      const child = tableById[entry.nested] || tableByEnum[entry.nestedEnum];
+      return (entry.nestedName || "") + " " + collectDropWords(child, depth + 1, seen);
+    }
+    return (entry.itemName || "") + " " + (entry.itemEnglish || "");
+  }).join(" ");
+}
+for (const t of db.dropTables) dropWords[t.enumName] = collectDropWords(t, 0, new Set());
 const directOrigin = {};
 for (const source of db.sources) {
   for (const ref of source.refs) {
@@ -1401,8 +1422,7 @@ function flattenDrops(table, mul, depth, seen) {
     const portion = mul * entryPortion(table, entry);
     if (entry.outcome === 1) {
       const child = tableById[entry.nested] || tableByEnum[entry.nestedEnum];
-      const expand = child && child.category !== "掉落集合" && child.entries.length <= 24;
-      if (expand) rows.push(...flattenDrops(child, portion, depth + 1, nextSeen));
+      if (child && child.entries.length) rows.push(...flattenDrops(child, portion, depth + 1, nextSeen));
       else rows.push({ kind: "table", title: (child && child.title) || entry.nestedName || "子表", enumName: (child && child.enumName) || entry.nestedEnum || "", chance: portion, amount: amount(entry) });
     } else {
       rows.push({ kind: "item", id: entry.item, title: entry.itemName || "物品", icon: entry.itemIcon, chance: portion, amount: amount(entry), rarity: rarityText(entry), flags: entry.flagText || [], recipe: entry.outcome === 2, recipeId: entry.recipe });
@@ -1419,13 +1439,48 @@ function rarityText(entry) {
   const sum = entry.rarities.reduce((a,b)=>a+b,0) || 1;
   return entry.rarities.map((v,i) => v ? (db.rarity[i]||("稀有度"+i)) + " " + (v/sum*100).toFixed(0) + "%" : "").filter(Boolean).join(" · ");
 }
+function categoriesFor(kind) {
+  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : [];
+  return ["全部", ...[...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh"))];
+}
+function syncCats(preferred) {
+  const cats = categoriesFor(mode);
+  if (cats.length < 2) { catEl.hidden = true; return; }
+  catEl.hidden = false;
+  const want = preferred == null ? catEl.value : preferred;
+  catEl.innerHTML = cats.map(c => '<option>'+c+'</option>').join("");
+  catEl.value = cats.includes(want) ? want : "全部";
+}
+function clashLabel(source) {
+  const title = shown(source.title);
+  const group = db.sources.filter(other => other.category === source.category && shown(other.title) === title);
+  if (group.length < 2) return "";
+  const mine = source.english || String(source.asset || "").replace(/ConfigurationAsset$/, "");
+  return mine && mine !== title ? mine : "";
+}
+function sourceLabel(source) {
+  const base = withTag(shown(source.title), sourceTag(source.category));
+  const extra = clashLabel(source);
+  return extra ? base + " · " + extra : base;
+}
+function rowTitle(row) {
+  if (!row) return "";
+  if (mode === "tables") return named(row.title, row.enumName);
+  if (mode === "sources") return sourceLabel(row);
+  return row.title || "";
+}
 function filtered() {
   const q = qEl.value.trim().toLowerCase();
   const cat = catEl.value;
-  if (mode === "tables") return db.dropTables.filter(t => (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+t.entries.map(e=>e.itemName+" "+(e.itemEnglish||"")+" "+named(e.nestedName, e.nestedEnum)).join(" ")).toLowerCase().includes(q)));
-  if (mode === "sources") return db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (withTag(shown(s.title), sourceTag(s.category))+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>named(r.title, r.table)).join(" ")).toLowerCase().includes(q)));
-  if (mode === "maps") return (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ")).toLowerCase().includes(q));
-  return db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
+  let rows;
+  if (mode === "tables") rows = db.dropTables.filter(t => {
+    if (!t.entries.length && !q) return false;
+    return (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+(dropWords[t.enumName]||"")).toLowerCase().includes(q));
+  });
+  else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ")).toLowerCase().includes(q));
+  else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
+  return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
 function shown(text) {
   const value = String(text || "");
@@ -1445,12 +1500,13 @@ function named(title, enumName) {
 }
 function renderList() {
   const rows = filtered();
-  listEl.innerHTML = rows.slice(0, 400).map((row, i) => {
-    const title = mode==="tables" ? named(row.title, row.enumName) : mode==="sources" ? withTag(shown(row.title), sourceTag(row.category)) : row.title;
-    const sub = mode==="tables" ? (row.entries.length+" 项 · "+row.category) : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点") : ((row.places||[]).join("、"));
+  const body = rows.map((row, i) => {
+    const title = rowTitle(row);
+    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点") : ((row.places||[]).join("、"));
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
-  }).join("") || '<p class="muted" style="padding:12px">没有匹配结果</p>';
+  }).join("");
+  listEl.innerHTML = (body || '<p class="muted" style="padding:12px">没有匹配结果</p>') + (rows.length ? '<p class="list-count">共 '+rows.length+' 条</p>' : "");
   listEl.querySelectorAll(".row").forEach(btn => btn.onclick = () => {
     listEl.querySelectorAll(".row").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
@@ -1467,26 +1523,48 @@ function show(kind, row) {
   present(kind, row);
   pushView();
 }
-function openTable(name) {
+function sourceForTable(name) {
   const table = db.dropTables.find(t => t.enumName === name || t.title === name);
-  if (table) show("tables", table);
+  const start = table ? table.enumName : name;
+  if (!start) return null;
+  const seen = new Set();
+  const stack = [start];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    const owner = db.sources.find(s => s.refs.some(r => r.table === current));
+    if (owner) return owner;
+    for (const parent of parentEnums[current] || []) stack.push(parent);
+  }
+  return null;
+}
+function openTable(name) {
+  const source = sourceForTable(name);
+  if (source) show("sources", source);
 }
 function openItem(id) {
   const item = db.items.find(it => String(it.id) === String(id));
   if (item) show("items", item);
 }
 function openLoot(enumName) {
-  const source = db.sources.find(s => s.refs.some(r => r.table === enumName));
+  openTable(enumName);
+}
+function openSource(key) {
+  let raw = key;
+  try { raw = decodeURIComponent(key); } catch (e) {}
+  const source = rowByKey(raw);
   if (source) show("sources", source);
-  else openTable(enumName);
 }
 function bindJumps(root) {
   root.querySelectorAll("[data-jump]").forEach(a => a.onclick = (event) => { event.preventDefault(); openTable(a.dataset.jump); });
   root.querySelectorAll("[data-item]").forEach(a => a.onclick = (event) => { event.preventDefault(); openItem(a.dataset.item); });
   root.querySelectorAll("[data-loot]").forEach(a => a.onclick = (event) => { event.preventDefault(); openLoot(a.dataset.loot); });
+  root.querySelectorAll("[data-source]").forEach(a => a.onclick = (event) => { event.preventDefault(); openSource(a.dataset.source); });
 }
 function open(row) {
   current = row;
+  if (row) lastByMode[mode] = row;
   if (mode === "tables") {
     const weightRows = row.entries.map(e => {
       const what = e.outcome === 1
@@ -1497,9 +1575,12 @@ function open(row) {
     }).join("");
     const users = db.sources.filter(s => s.refs.some(r => r.table === row.enumName));
     const where = [row.place && ("地点："+row.place), row.look && row.look !== row.title && !String(row.title).includes(row.look) && ("样子："+row.look)].filter(Boolean).join(" · ");
+    const dropList = row.entries.length
+      ? '<table><thead><tr><th>掉落</th><th>数量</th><th>方式</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+weightRows+'</tbody></table>'
+      : '<p class="muted">这张表没有条目。</p>';
     detailEl.innerHTML = '<div class="hero">'+icon(portraitOf(row), named(row.title, row.enumName))+'<div><h2>'+named(row.title, row.enumName)+'</h2><div class="muted">'+row.category+' · 总权重 '+row.totalWeight+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>'
-      + '<table><thead><tr><th>掉落</th><th>数量</th><th>方式</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+weightRows+'</tbody></table>'
-      + '<h3>谁会掉这个</h3>' + (users.length ? users.map(s => '<div class="tag">'+s.title+'</div>').join("") : '<p class="muted">没有在单位或容器配置里找到直接引用。它可能是别的掉落表里的子表。</p>');
+      + dropList
+      + '<h3>谁会掉这个</h3>' + (users.length ? users.map(s => '<a class="tag" data-source="'+encodeURIComponent(rowKey("sources", s))+'">'+sourceLabel(s).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a>').join("") : '<p class="muted">没有在单位或容器配置里找到直接引用。它可能是别的掉落表里的子表。</p>');
     bindJumps(detailEl);
   } else if (mode === "sources") {
     const blocks = row.refs.map(ref => {
@@ -1507,26 +1588,35 @@ function open(row) {
       const drops = table ? flattenDrops(table, 1, 0, new Set()).sort((a, b) => b.chance - a.chance) : [];
       const body = drops.map(drop => {
         const what = drop.kind === "table"
-          ? '<a data-jump="'+drop.enumName+'">'+named(drop.title, drop.enumName)+'</a>'
+          ? (sourceForTable(drop.enumName) ? '<a data-loot="'+drop.enumName+'">'+named(drop.title, drop.enumName)+'</a>' : named(drop.title, drop.enumName))
           : '<a data-item="'+drop.id+'">'+icon(drop.icon, drop.title)+' '+drop.title+'</a>'+(drop.recipe ? ' <span class="tag">配方 '+drop.recipeId+'</span>' : '');
         const extra = (drop.rarity ? drop.rarity + " " : "") + (drop.flags || []).map(flag => '<span class="tag">'+flag+'</span>').join("");
         return '<tr><td>'+what+'</td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div></td><td>'+extra+'</td></tr>';
       }).join("");
-      return '<h3><a data-jump="'+ref.table+'">'+named((table && table.title) || ref.title, (table && table.enumName) || ref.table)+'</a></h3>'
+      return '<h3>'+named((table && table.title) || ref.title, (table && table.enumName) || ref.table)+'</h3>'
         + '<table><thead><tr><th>掉落</th><th>数量</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+body+'</tbody></table>';
     }).join("");
     const where = [row.place && ("地点："+row.place), row.look && row.look !== row.title && !String(row.title).includes(row.look) && ("样子："+row.look)].filter(Boolean).join(" · ");
-    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, withTag(shown(row.title), sourceTag(row.category)))+'<div><h2>'+withTag(shown(row.title), sourceTag(row.category))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + blocks;
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, sourceLabel(row))+'<div><h2>'+sourceLabel(row).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + blocks;
     bindJumps(detailEl);
   } else if (mode === "items") {
     const from = [];
-    for (const table of db.dropTables) {
-      for (const e of table.entries) if (e.item === row.id) from.push({ table, e });
+    for (const source of db.sources) {
+      let best = null;
+      for (const ref of source.refs) {
+        const table = tableByEnum[ref.table];
+        if (!table) continue;
+        for (const drop of flattenDrops(table, 1, 0, new Set())) {
+          if (drop.kind === "item" && String(drop.id) === String(row.id) && (!best || drop.chance > best.chance)) best = drop;
+        }
+      }
+      if (best) from.push({ source, drop: best });
     }
+    from.sort((a, b) => b.drop.chance - a.drop.chance);
     const places = (row.places||[]).join("、");
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
-      + '<table><thead><tr><th>掉落表</th><th>数量</th><th>几率</th></tr></thead><tbody>'
-      + from.map(({table,e}) => '<tr><td><a data-jump="'+table.enumName+'">'+named(table.title, table.enumName)+'</a></td><td>'+amount(e)+'</td><td>'+chance(table,e)+'</td></tr>').join("")
+      + '<table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
+      + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
       + '</tbody></table>';
     bindJumps(detailEl);
   } else if (mode === "maps") {
@@ -1719,9 +1809,14 @@ function open(row) {
   }
 }
 function setMode(next) {
+  if (next === mode) return;
   mode = next;
+  syncCats("全部");
   const rows = filtered();
-  if (rows[0]) show(next, rows[0]);
+  const remembered = lastByMode[next];
+  const hit = remembered && rows.find(r => r === remembered);
+  if (hit) show(next, hit);
+  else if (rows[0]) show(next, rows[0]);
   else {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
     document.getElementById("tab-"+next).classList.add("on");
@@ -1800,15 +1895,20 @@ function replaceView() {
   writeState(viewState(), true);
 }
 function present(kind, row) {
+  if (kind === "tables") {
+    row = sourceForTable(row && (row.enumName || row.title || ""));
+    kind = "sources";
+  }
   mode = kind;
+  syncCats();
   document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
   document.getElementById("tab-"+kind).classList.add("on");
   renderList();
   if (row) open(row);
   else { current = null; detailEl.innerHTML = ""; }
   const rows = filtered();
-  const idx = row ? rows.findIndex(r => r === row || (r.enumName && r.enumName === row.enumName) || (r.id != null && row.id != null && r.id === row.id && r.name === row.name) || (r.asset && r.asset === row.asset && r.title === row.title) || (r.image && r.image === row.image)) : -1;
-  const btn = idx >= 0 && idx < 400 ? listEl.querySelector('.row[data-i="'+idx+'"]') : null;
+  const idx = row ? rows.findIndex(r => r === row || (r.enumName && r.enumName === row.enumName && !r.asset) || (r.id != null && row.id != null && r.id === row.id && r.name === row.name) || (r.asset && r.asset === row.asset && r.title === row.title) || (r.image && r.image === row.image)) : -1;
+  const btn = idx >= 0 ? listEl.querySelector('.row[data-i="'+idx+'"]') : null;
   if (btn) {
     btn.classList.add("active");
     btn.scrollIntoView({ block: "nearest" });
@@ -1820,8 +1920,8 @@ function applyView(state) {
   if (url === appliedUrl) return;
   appliedUrl = url;
   qEl.value = state.q || "";
-  if ([...catEl.options].some(option => option.value === state.cat)) catEl.value = state.cat;
   mode = state.mode;
+  syncCats(state.cat);
   present(state.mode, rowByKey(state.id) || filtered()[0] || null);
 }
 const SEARCH_KEY = "vaultbreakers-wiki-searches";
@@ -1857,7 +1957,6 @@ function applyHash() {
   const state = decodeState(location.hash);
   if (state) applyView(state);
 }
-document.getElementById("tab-tables").onclick = () => setMode("tables");
 document.getElementById("tab-sources").onclick = () => setMode("sources");
 document.getElementById("tab-items").onclick = () => setMode("items");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
@@ -1875,7 +1974,23 @@ qEl.onkeydown = (event) => {
   if (event.key === "Enter") { rememberSearch(qEl.value); historyEl.hidden = true; }
   if (event.key === "Escape") historyEl.hidden = true;
 };
-catEl.onchange = () => { renderList(); pushView(); };
+catEl.onchange = () => {
+  const rows = filtered();
+  if (current && rows.includes(current)) {
+    renderList();
+    const btn = listEl.querySelector('.row[data-i="'+rows.indexOf(current)+'"]');
+    if (btn) btn.classList.add("active");
+    pushView();
+    return;
+  }
+  if (rows[0]) show(mode, rows[0]);
+  else {
+    renderList();
+    current = null;
+    detailEl.innerHTML = "";
+    pushView();
+  }
+};
 window.addEventListener("popstate", (event) => {
   if (historyLock) return;
   if (event.state) applyView(event.state);
@@ -1891,9 +2006,13 @@ mode = "sources";
   const savedRow = saved && rowByKey(saved.id);
   if (saved && savedRow) {
     qEl.value = saved.q || "";
-    if ([...catEl.options].some(option => option.value === saved.cat)) catEl.value = saved.cat;
+    mode = saved.mode;
+    syncCats(saved.cat);
     present(saved.mode, savedRow);
-  } else if (filtered()[0]) present("sources", filtered()[0]);
+  } else {
+    syncCats("全部");
+    if (filtered()[0]) present("sources", filtered()[0]);
+  }
   replaceView();
 }
 </script>

@@ -284,12 +284,12 @@ top'  = 100 - 原来的 left
 
 图标仍只在 `extract.js` 里 `rotate180`，主循环看到已有文件就跳过。不要给图标加这个 90°。
 
-页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.1**，以及游戏版本那一格。读代码时那一格写的是「1.0（Steam build 25803617）」。这不是游戏版本：
+页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.1**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2137.110314**，后面括号里的 Steam build 25803617 是安装构建号。`1.0` 不是游戏版本：
 
 - `Vaultbreakers_Data/globalgamemanagers` 的 PlayerSettings 里，连续三个版本字符串是 `visionOSBundleVersion = 1.0`、`tvOSBundleVersion = 1.0`、`bundleVersion = 2.0.2137.110314`
 - `bundleVersion` 才是运行时 `Application.version`。页面上的游戏版本用 **`2.0.2137.110314`**
 - `1.0` 是旁边两个平台字段。Steam `appmanifest_4488770.acf` 的 `buildid` `25803617` 是安装构建号。exe 的 ProductVersion `6000.3.18f1` 是引擎版本
-- 若你读代码时这一格已经是 `2.0.2137.110314`，以代码为准。若仍是 `1.0` 或 Steam build，就是还没改到 bundleVersion
+- 页面上的游戏版本是 `2.0.2137.110314`，括号里保留 Steam build `25803617`
 
 作者和 v0.1 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `index.html`。
 
