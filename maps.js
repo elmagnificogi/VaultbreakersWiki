@@ -1012,6 +1012,307 @@ function collectRegions(def) {
   return regions;
 }
 
+const NPC_TOKENS = [
+  ["elementalshop", "ElementalShop"],
+  ["silverhook", "Silverhook"],
+  ["vaulkaryn", "Vulkaryn"],
+  ["vulkaryn", "Vulkaryn"],
+  ["currenbringer", "CurrentBringer"],
+  ["currentbringer", "CurrentBringer"],
+  ["farstriker", "Farstriker"],
+  ["milloween", "Milloween"],
+  ["goldbelly", "Goldbelly"],
+  ["priestess", "Priestess"],
+  ["thalindra", "Thalindra"],
+  ["oldcrone", "OldCrone"],
+  ["drakthor", "Drakthor"],
+  ["lanathar", "Lanathar"],
+  ["gondrak", "Gondrak"],
+  ["leiliel", "Leiliel"],
+  ["vexxie", "Vexxie"],
+  ["manapuff", "Wishy"],
+  ["ruffles", "Ruffles"],
+  ["emerith", "Emerith"],
+  ["vorrak", "Vorrak"],
+  ["aetos", "Aetos"],
+  ["diona", "Diona"],
+  ["doctor", "Doctor"],
+  ["wishy", "Wishy"],
+  ["jolo", "Jolo"],
+  ["ryzor", "Ryzor"],
+  ["hunter", "Hunter"],
+  ["aurora", "Aurora"],
+  ["sven", "Sven"],
+];
+
+const BOSS_TOKENS = [
+  ["werewolfmagehowly", "WerewolfMageHowly"],
+  ["werewolfmage", "WerewolfMage"],
+  ["ghostwerewolf", "GhostWerewolf"],
+  ["ghostelitewolf", "GhostEliteWolf"],
+  ["ghostbandit", "GhostBandit"],
+  ["ghostcrone", "GhostCrone"],
+  ["blackwerewolf", "BlackWerewolf"],
+  ["alphawolf", "EliteWolf"],
+  ["elitewolf", "EliteWolf"],
+  ["werewolfoneeye", "WerewolfOneEye"],
+  ["oldoneeye", "OldOneEye"],
+  ["spidermatriarch", "SpiderMatriarch"],
+  ["matriarch", "SpiderMatriarch"],
+  ["voidcleric", "VoidCleric"],
+  ["forgottenchampion", "ForgottenChampion"],
+  ["bearwandering", "BearWandering"],
+  ["stonebear", "StoneBear"],
+  ["redbear", "RedBear"],
+  ["oldbear", "OldBear"],
+  ["banditaleric", "BanditAleric"],
+  ["aleric", "BanditAleric"],
+  ["kingfisher", "KingFisher"],
+  ["blueblazer", "BlueBlazer"],
+  ["banditking", "BanditKing"],
+  ["succubusboss", "SuccubusBoss"],
+  ["succubus", "Succubus"],
+  ["miniboss", "ScratMechSuitMiniBoss"],
+  ["necronus", "Necronus"],
+  ["howly", "WerewolfMageHowly"],
+  ["widow", "Widow"],
+];
+
+function npcToken(name) {
+  const compact = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const [needle, token] of NPC_TOKENS) {
+    if (compact.includes(needle)) return token;
+  }
+  return "";
+}
+
+function bossToken(name) {
+  const compact = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const [needle, token] of BOSS_TOKENS) {
+    if (compact.includes(needle)) return token;
+  }
+  if (/^boss(grp)?$/i.test(name.replace(/[\s_]/g, ""))) return "Boss";
+  return "";
+}
+
+function bossExcluded(name) {
+  return /Gate|Pedestal|Terrain|Shadow|Visual|Concept|Contamination|Arena|BossRoom|BossLevel|Hatchery|Corpse|Vfx|Decal|Mdl|Audio|Postprocess|Debris|Debri|Explosion|Shroom|Dungeon|Chest|Water_|Reveal|Torch|Cluster|Amb_|Wind|Rune|Sleeping|Floating/i.test(name);
+}
+
+function collectActors(def) {
+  const buf = fs.readFileSync(path.join(BUNDLE_DIR, def.scene));
+  const info = bundleInfo(buf);
+  const scene = info.nodes.find((n) => !n.path.includes("."));
+  const data = extractRange(buf, info, scene.offset, scene.size);
+  const sf = parseSerialized(data);
+  const goType = sf.types.findIndex((t) => t.classId === 1);
+  const trType = sf.types.findIndex((t) => t.classId === 4);
+  const worldType = sf.types.findIndex((t) => typeHas(t.node, "_worldSize"));
+  const worldObj = sf.objects.find((o) => o.typeId === worldType);
+  if (!worldObj) return { npcs: [], bosses: [] };
+  const world = readObject(sf, worldObj).value;
+  if (!asFloat(world._worldSize.x) || !asFloat(world._worldSize.y)) return { npcs: [], bosses: [] };
+  const frame = mapFrame(def);
+  const byPath = new Map();
+  for (const obj of sf.objects) byPath.set(obj.pathId.toString(), obj);
+  const gos = sf.objects.filter((o) => o.typeId === goType).sort((a, b) => a.byteStart - b.byteStart);
+  function findGo(abs) {
+    const rel = abs - sf.dataOffset;
+    let lo = 0;
+    let hi = gos.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const obj = gos[mid];
+      if (rel < obj.byteStart) hi = mid - 1;
+      else if (rel >= obj.byteStart + obj.byteSize) lo = mid + 1;
+      else return obj;
+    }
+    return null;
+  }
+  function goName(obj) {
+    if (!obj) return "";
+    const raw = readObject(sf, obj).value["#427"];
+    return Array.isArray(raw) ? Buffer.from(raw).toString("utf8") : "";
+  }
+  const cache = new Map();
+  function worldOf(pathId, depth) {
+    const key = String(pathId);
+    if (cache.has(key)) return cache.get(key);
+    const obj = byPath.get(key);
+    if (!obj || obj.typeId !== trType || depth > 40) return null;
+    const value = readObject(sf, obj).value;
+    const localPos = [asFloat(value.m_LocalPosition.x), asFloat(value.m_LocalPosition.y), asFloat(value.m_LocalPosition.z)];
+    const localRot = [asFloat(value.m_LocalRotation.x), asFloat(value.m_LocalRotation.y), asFloat(value.m_LocalRotation.z), asFloat(value.m_LocalRotation.w)];
+    let pos = localPos;
+    let rot = localRot;
+    const father = value.m_Father && String(value.m_Father.pathId);
+    if (father && father !== "0") {
+      const parent = worldOf(father, depth + 1);
+      if (parent) {
+        const rotated = quatRotate(parent.rot, localPos);
+        pos = [parent.pos[0] + rotated[0], parent.pos[1] + rotated[1], parent.pos[2] + rotated[2]];
+        rot = quatMul(parent.rot, localRot);
+      }
+    }
+    const result = { pos, rot, value };
+    cache.set(key, result);
+    return result;
+  }
+  function transformOf(go) {
+    const value = readObject(sf, go).value;
+    const comps = Array.isArray(value.m_Component) ? value.m_Component : [];
+    for (const comp of comps) {
+      const ptr = comp.component || comp;
+      const obj = ptr && byPath.get(String(ptr.pathId));
+      if (obj && obj.typeId === trType) return String(ptr.pathId);
+    }
+    return "";
+  }
+  function placedOf(go) {
+    const id = transformOf(go);
+    return id ? worldOf(id, 0) : null;
+  }
+  function parentName(placed) {
+    const fatherId = placed && placed.value.m_Father && String(placed.value.m_Father.pathId);
+    if (!fatherId || fatherId === "0") return "";
+    const father = worldOf(fatherId, 0);
+    const go = father && byPath.get(String(father.value["#374"] && father.value["#374"].pathId));
+    return goName(go);
+  }
+  function onMap(x, z) {
+    const u = (x - frame.offsetX) / frame.sizeX;
+    const v = (z - frame.offsetY) / frame.sizeY;
+    if (u < -0.02 || u > 1.02 || v < -0.02 || v > 1.02) return null;
+    const mapped = toMapPercent(x, z, frame.offsetX, frame.offsetY, frame.sizeX, frame.sizeY);
+    return {
+      left: Math.round(mapped.left * 10) / 10,
+      top: Math.round(mapped.top * 10) / 10,
+    };
+  }
+  function away(pos) {
+    return pos && (Math.abs(pos[0]) > 2 || Math.abs(pos[2]) > 2);
+  }
+  function anchor(placed, depth) {
+    if (!placed || depth > 4) return null;
+    if (away(placed.pos)) return placed.pos;
+    const kids = Array.isArray(placed.value.m_Children) ? placed.value.m_Children : [];
+    for (const kid of kids) {
+      const found = anchor(worldOf(kid.pathId, 0), depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  function named(needle, test) {
+    const bytes = Buffer.from(needle);
+    const hits = [];
+    const seen = new Set();
+    let at = 0;
+    while ((at = data.indexOf(bytes, at)) >= 0) {
+      let start = at;
+      while (start > 4 && data[start - 1] >= 32 && data[start - 1] < 127) start--;
+      let end = at + needle.length;
+      while (end < data.length && data[end] >= 32 && data[end] < 127) end++;
+      const len = end - start;
+      if (len >= needle.length && len < 96 && start >= 4 && data.readInt32LE(start - 4) === len) {
+        const name = data.toString("utf8", start, end);
+        if (!test || test(name)) {
+          const go = findGo(start);
+          if (go && !seen.has(go.byteStart)) {
+            seen.add(go.byteStart);
+            hits.push({ name, go });
+          }
+        }
+      }
+      at += needle.length;
+    }
+    return hits;
+  }
+  function childGo(placed, kid) {
+    const child = worldOf(kid.pathId, 0);
+    if (!child) return null;
+    const go = byPath.get(String(child.value["#374"] && child.value["#374"].pathId));
+    return { name: goName(go), placed: child };
+  }
+  const npcs = [];
+  for (const folderName of ["Quest NPCs", "DV_Quests_Pref"]) {
+    for (const folder of named(folderName, (name) => name === folderName)) {
+      const placed = placedOf(folder.go);
+      const kids = placed && Array.isArray(placed.value.m_Children) ? placed.value.m_Children : [];
+      for (const kid of kids) {
+        const child = childGo(placed, kid);
+        if (!child) continue;
+        const token = npcToken(child.name);
+        if (!token) continue;
+        const pos = anchor(child.placed, 0);
+        const spot = pos && onMap(pos[0], pos[2]);
+        if (!spot) continue;
+        const fallback = child.name
+          .replace(/\s*(quests|quest|unlock|hologram)\s*/ig, " ")
+          .replace(/\s+/g, " ")
+          .replace(/^[\s-]+|[\s-]+$/g, "");
+        npcs.push({ token, fallback, left: spot.left, top: spot.top });
+      }
+    }
+  }
+  const bosses = [];
+  const bossNeedles = ["WerewolfMage", "AlphaWolf", "EliteWolf", "BlackWerewolf", "OldBear", "KingFisher", "BlueBlazer", "OneEye", "Aleric", "VoidCleric", "GhostWerewolf", "GhostElite", "GhostBandit", "GhostCrone", "Matriarch", "Necronus", "Widow", "Succubus", "MiniBoss", "Howly", "Forgotten", "StoneBear", "RedBear", "Wandering", "Boss"];
+  for (const needle of bossNeedles) {
+    for (const hit of named(needle, (name) => !bossExcluded(name) && bossToken(name))) {
+      const placed = placedOf(hit.go);
+      if (!placed) continue;
+      const token = bossToken(hit.name);
+      const kids = Array.isArray(placed.value.m_Children) ? placed.value.m_Children : [];
+      const childTokens = kids.map((kid) => childGo(placed, kid)).filter(Boolean);
+      if (token === "Boss" && childTokens.some((child) => bossToken(child.name) && bossToken(child.name) !== "Boss")) continue;
+      if (childTokens.some((child) => bossToken(child.name) === token && away(child.placed.pos) && (Math.abs(child.placed.pos[0] - placed.pos[0]) > 8 || Math.abs(child.placed.pos[2] - placed.pos[2]) > 8))) continue;
+      const parent = parentName(placed);
+      if (/^Set \d+$/.test(parent) || parent === "PerformanceScenarioMarkers") continue;
+      if (!away(placed.pos)) continue;
+      const spot = onMap(placed.pos[0], placed.pos[2]);
+      if (!spot || spot.left < 0 || spot.left > 100 || spot.top < 0 || spot.top > 100) continue;
+      const path = [];
+      const seenPoint = [];
+      for (const kid of (Array.isArray(placed.value.m_Children) ? placed.value.m_Children : [])) {
+        const child = childGo(placed, kid);
+        if (!child || !away(child.placed.pos)) continue;
+        const point = onMap(child.placed.pos[0], child.placed.pos[2]);
+        if (!point || point.left < 0 || point.top < 0 || point.left > 100 || point.top > 100) continue;
+        if (Math.hypot(point.left - spot.left, point.top - spot.top) > 18) continue;
+        const duplicate = seenPoint.some((prev) => Math.abs(prev.left - point.left) < 1.5 && Math.abs(prev.top - point.top) < 1.5);
+        if (duplicate) continue;
+        seenPoint.push(point);
+        path.push(point);
+      }
+      let route = path;
+      if (route.length >= 2) {
+        const lefts = route.map((point) => point.left);
+        const tops = route.map((point) => point.top);
+        const span = Math.max(Math.max(...lefts) - Math.min(...lefts), Math.max(...tops) - Math.min(...tops));
+        if (span > 28) route = [];
+      } else route = [];
+      bosses.push({
+        token,
+        fallback: token,
+        left: spot.left,
+        top: spot.top,
+        path: route,
+      });
+    }
+  }
+  function dedupe(rows) {
+    const kept = [];
+    const occupied = new Set();
+    for (const row of rows) {
+      const key = row.token + ":" + Math.round(row.left) + ":" + Math.round(row.top);
+      if (occupied.has(key)) continue;
+      occupied.add(key);
+      kept.push(row);
+    }
+    return kept;
+  }
+  return { npcs: dedupe(npcs), bosses: dedupe(bosses) };
+}
+
 function extractGameMaps(byKey) {
   const dir = path.join(__dirname, "maps");
   fs.mkdirSync(dir, { recursive: true });
@@ -1023,10 +1324,11 @@ function extractGameMaps(byKey) {
     const pins = collectPins(def);
     const regions = collectRegions(def);
     const entrances = collectEntrances(def);
-    console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length);
-    maps.push({ id: def.id, title, image: file, pins, regions, entrances });
+    const actors = collectActors(def);
+    console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length, "npcs", actors.npcs.length, "bosses", actors.bosses.length, "paths", actors.bosses.filter((boss) => boss.path.length >= 2).length);
+    maps.push({ id: def.id, title, image: file, pins, regions, entrances, npcs: actors.npcs, bosses: actors.bosses });
   }
   return maps;
 }
 
-module.exports = { extractGameMaps, collectRegions, collectEntrances, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };
+module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };

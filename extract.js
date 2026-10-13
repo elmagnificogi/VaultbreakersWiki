@@ -1191,7 +1191,80 @@ function main() {
       top: region.top,
       paths: region.paths,
     }));
+    function tighten(text) {
+      return String(text || "").replace(/([\u4e00-\u9fff])\s+([\u4e00-\u9fff])/g, "$1$2");
+    }
+    function actorAsset(token) {
+      if (!token || token === "Boss" || token === "MiniBoss") return "";
+      const needle = token.toLowerCase();
+      const hits = sources.filter((source) => (source.category === "怪物" || source.category === "工坊与商人") && (source.asset || "").toLowerCase().includes(needle));
+      return hits.length === 1 ? hits[0].asset : "";
+    }
+    const actorAliases = {
+      Vulkaryn: ["VulkarynItemVendor", "VulkarynInMatch"],
+      Silverhook: ["SilverhookSam", "SilverhookSamInMatch"],
+      Priestess: ["PriestessNpc", "PriestessInMatch"],
+      Lanathar: ["LanatharLightbringer", "LanatharInMatch"],
+      Gondrak: ["GondrakBlacksmith", "GondrakInMatch"],
+      Milloween: ["MilloweenInMatch"],
+      Vexxie: ["VexxieAlchemyCrafter", "VexxieInMatch"],
+      KingFisher: ["KingFisher"],
+      Widow: ["Widow"],
+      WerewolfMage: ["WerewolfMage"],
+      WerewolfMageHowly: ["WerewolfMageHowly"],
+      EliteWolf: ["EliteWolf"],
+      BlackWerewolf: ["BlackWerewolf"],
+      SpiderMatriarch: ["SpiderMatriarch"],
+      Necronus: ["Necronus"],
+      OldBear: ["OldBear"],
+      GhostWerewolf: ["GhostWerewolf"],
+      GhostEliteWolf: ["GhostEliteWolf"],
+      GhostCrone: ["AdvancedNPC_GhostCrone", "GhostCrone"],
+      ScratMechSuitMiniBoss: ["ScratMechSuitMiniBoss"],
+    };
+    function namedActor(token) {
+      const tries = [token].concat(actorAliases[token] || []);
+      for (const key of tries) {
+        const text = tighten(gameName(key));
+        if (text) return text;
+      }
+      return "";
+    }
+    function placeActors(rows) {
+      const placed = (rows || []).map((actor) => {
+        const asset = actorAsset(actor.token);
+        const source = asset ? sources.find((row) => row.asset === asset) : null;
+        const sourceTitle = source && /[\u4e00-\u9fff]/.test(source.title) ? tighten(source.title) : "";
+        const title = namedActor(actor.token) || sourceTitle || actor.fallback || actor.token;
+        if (!title) return null;
+        return {
+          title,
+          token: actor.token,
+          fallback: actor.fallback || "",
+          asset,
+          left: actor.left,
+          top: actor.top,
+          path: (actor.path || []).map((point) => ({ left: point.left, top: point.top })),
+        };
+      }).filter(Boolean);
+      const variants = new Map();
+      for (const actor of placed) {
+        if (!variants.has(actor.token)) variants.set(actor.token, new Set());
+        variants.get(actor.token).add(actor.fallback);
+      }
+      for (const actor of placed) {
+        if (variants.get(actor.token).size > 1 && actor.fallback && actor.fallback !== actor.title) {
+          actor.title = actor.title + " · " + actor.fallback;
+        }
+        delete actor.fallback;
+      }
+      return placed;
+    }
+    const npcs = placeActors(map.npcs);
+    const bosses = placeActors(map.bosses);
     console.log("regions", map.id, regions.map((region) => region.title).join(" | "));
+    console.log("npcs", map.id, npcs.map((actor) => actor.title).join(" | "));
+    console.log("bosses", map.id, bosses.map((actor) => actor.title + (actor.path.length >= 2 ? " path" + actor.path.length : "")).join(" | "));
     return {
       id: map.id,
       title: /[\u4e00-\u9fff]/.test(map.title) ? map.title : map.id,
@@ -1199,6 +1272,8 @@ function main() {
       pins,
       regions,
       entrances,
+      npcs,
+      bosses,
     };
   });
 
@@ -1285,10 +1360,19 @@ function writeHtml(db) {
   .pin:hover { outline:2px solid #fff; z-index:2; }
   .gate { position:absolute; z-index:4; width:12px; height:12px; margin:0; padding:0; border:2px solid #111; background:#f7dc6f; transform:translate(-50%,-50%) rotate(45deg); }
   .gate.extract { background:#e07a7a; border-radius:2px; transform:translate(-50%,-50%); }
-  .gate-label { position:absolute; z-index:4; transform:translate(8px,-50%); font-size:12px; font-weight:700; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
-  .legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .region-filter, .pin-filter, .gate-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
-  .region-filter.on, .pin-filter.on, .gate-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
+  .gate-label, .actor-label { position:absolute; z-index:4; transform:translate(8px,-50%); font-size:12px; font-weight:700; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
+  .actor { position:absolute; z-index:5; margin:0; padding:0; border:2px solid #111; transform:translate(-50%,-50%); }
+  .actor.npc { width:11px; height:11px; border-radius:50%; background:#5dade2; }
+  .actor.boss { width:13px; height:13px; background:#e74c3c; border-color:#fff; transform:translate(-50%,-50%) rotate(45deg); }
+  button.actor { cursor:pointer; }
+  .actor:hover { outline:2px solid #fff; z-index:6; }
+  .legend-block { margin-top:10px; }
+  .legend-tools { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:4px; }
+  .legend-tools b { min-width:4.5em; }
+  .bulk { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); }
+  .legend { display:flex; flex-wrap:wrap; gap:6px; }
+  .region-filter, .pin-filter, .gate-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
+  .region-filter.on, .pin-filter.on, .gate-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } aside, section { max-height:none; } }
 </style>
@@ -1479,7 +1563,7 @@ function filtered() {
     return (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+(dropWords[t.enumName]||"")).toLowerCase().includes(q));
   });
   else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
-  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ")).toLowerCase().includes(q));
+  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
   else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
@@ -1503,7 +1587,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点") : ((row.places||[]).join("、"));
+    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : ((row.places||[]).join("、"));
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -1629,13 +1713,30 @@ function open(row) {
     const regions = row.regions || [];
     const q = qEl.value.trim().toLowerCase();
     const mapHit = !q || row.title.toLowerCase().includes(q);
+    function legendBlock(title, group, body) {
+      if (!body) return "";
+      return '<div class="legend-block"><div class="legend-tools"><b>'+title+'</b><button type="button" class="tag bulk" data-bulk="'+group+'" data-on="1">全选</button><button type="button" class="tag bulk" data-bulk="'+group+'" data-on="0">全不选</button></div><div class="legend">'+body+'</div></div>';
+    }
+    function sourceAttr(asset) {
+      if (!asset) return "";
+      const source = db.sources.find(s => s.asset === asset);
+      if (!source) return "";
+      return ' data-source="'+encodeURIComponent(rowKey("sources", source))+'"';
+    }
     const regionLegend = regions.map((region, index) => '<button type="button" class="tag region-filter on" data-key="'+index+'" aria-pressed="true" data-title="'+esc(region.title)+'"><span class="dot" style="background:'+regionColors[index % regionColors.length]+'"></span>'+esc(region.title)+'</button>').join("");
     const legend = titles.map(title => '<button type="button" class="tag pin-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:'+colorOf(title)+'"></span>'+esc(title)+'</button>').join("");
+    const npcs = row.npcs || [];
+    const bosses = row.bosses || [];
+    const npcTitles = [...new Set(npcs.map(actor => actor.title))];
+    const bossTitles = [...new Set(bosses.map(actor => actor.title))];
+    const npcLegend = npcTitles.map(title => '<button type="button" class="tag npc-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:#5dade2"></span>'+esc(title)+'</button>').join("");
+    const bossLegend = bossTitles.map(title => '<button type="button" class="tag boss-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:#e74c3c"></span>'+esc(title)+'</button>').join("");
     const shapes = regions.map((region, index) => {
       const color = regionColors[index % regionColors.length];
       const polys = region.paths.map(path => '<polygon points="'+path.map(p => p.left+","+p.top).join(" ")+'" fill="'+color+'" fill-opacity="0.16" stroke="'+color+'" stroke-width="0.28" stroke-linejoin="round"></polygon>').join("");
       return '<g data-key="'+index+'" data-title="'+esc(region.title)+'">'+polys+'</g>';
     }).join("");
+    const bossPaths = bosses.filter(boss => (boss.path || []).length >= 2).map(boss => '<polyline class="boss-path" data-key="'+esc(boss.title)+'" data-title="'+esc(boss.title)+'" points="'+boss.path.map(p => p.left+","+p.top).join(" ")+'" fill="none" stroke="#e74c3c" stroke-width="0.45" stroke-dasharray="1.2 0.7" stroke-linecap="round"></polyline>').join("");
     const labels = regions.map((region, index) => '<div class="region-label" data-key="'+index+'" data-title="'+esc(region.title)+'" style="left:'+region.left+'%;top:'+region.top+'%;color:'+regionColors[index % regionColors.length]+'">'+esc(region.title)+'</div>').join("");
     const dots = row.pins.map(pin => {
       const shown = mapHit || pin.title.toLowerCase().includes(q);
@@ -1652,12 +1753,28 @@ function open(row) {
       return '<div class="gate'+(entrance.kind==="extract"?" extract":"")+'" data-key="'+index+'" data-title="'+esc(entrance.title)+'" data-detail="'+esc(entrance.detail)+'" title="'+esc(tip)+'" style="left:'+entrance.left+'%;top:'+entrance.top+'%;display:'+(shown?"":"none")+'"></div>'
         + '<div class="gate-label" data-key="'+index+'" data-title="'+esc(entrance.title)+'" data-detail="'+esc(entrance.detail)+'" style="left:'+entrance.left+'%;top:'+entrance.top+'%;transform:'+labelShift+';margin-top:'+(gateNudges[index]*15)+'px;color:'+color+';display:'+(shown?"":"none")+'">'+esc(entrance.title)+'</div>';
     }).join("");
+    function actorMarks(list, kind) {
+      const nudges = list.map((actor, index) => list.slice(0, index).filter(other => other.title === actor.title && Math.abs(other.left - actor.left) < 4 && Math.abs(other.top - actor.top) < 8).length);
+      return list.map((actor, index) => {
+        const shown = mapHit || actor.title.toLowerCase().includes(q);
+        const labelShift = actor.left > 70 ? "translate(calc(-100% - 8px),-50%)" : "translate(8px,-50%)";
+        const tag = actor.asset ? "button" : "div";
+        const color = kind === "boss" ? "#e74c3c" : "#5dade2";
+        return '<'+tag+(tag==="button"?' type="button"':'')+' class="actor '+kind+'" data-key="'+esc(actor.title)+'" data-title="'+esc(actor.title)+'" title="'+esc(actor.title)+'"'+sourceAttr(actor.asset)+' style="left:'+actor.left+'%;top:'+actor.top+'%;display:'+(shown?"":"none")+'"></'+tag+'>'
+          + '<div class="actor-label '+kind+'-label" data-key="'+esc(actor.title)+'" data-title="'+esc(actor.title)+'" style="left:'+actor.left+'%;top:'+actor.top+'%;transform:'+labelShift+';margin-top:'+(nudges[index]*15)+'px;color:'+color+';display:'+(shown?"":"none")+'">'+esc(actor.title)+'</div>';
+      }).join("");
+    }
+    const npcMarks = actorMarks(npcs, "npc");
+    const bossMarks = actorMarks(bosses, "boss");
+    const pathCount = bosses.filter(boss => (boss.path || []).length >= 2).length;
     const note = [
       regions.length ? "区域轮廓 "+regions.length+" 块，沿遮罩贴图边缘描出，并去掉落在纯色空地上、以及横跨空地的部分。" : "",
       entrances.length ? "入口 "+entrances.length+" 处：菱形是场景里的传送门，方块是撤离点。" : "这张地图的场景里没有写死的传送门或撤离点。",
       row.pins.length ? "固定搜刮点 "+row.pins.length+" 处，点标记打开对应掉落。" : "这张地图的场景里没有写死的搜刮点坐标。",
+      npcs.length ? "NPC "+npcs.length+" 处，蓝点是场景里写死的位置。能对上来源的点可以打开该条目。" : "这张地图的场景里没有写死的 NPC 坐标。",
+      bosses.length ? "固定怪 "+bosses.length+" 处，红菱形是场景里写死、总会刷在原地的具名单位。"+(pathCount ? "虚线是同一只怪旁边分开的巡逻点。" : "") : "这张地图的场景里没有写死的具名怪物坐标。",
     ].filter(Boolean).join("");
-    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+(regionLegend?'<div class="legend">'+regionLegend+'</div>':'')+(gateLegend?'<div class="legend">'+gateLegend+'</div>':'')+(legend?'<div class="legend">'+legend+'</div>':'')+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+'</svg>'+labels+gates+dots+'</div><div class="mapsizer"></div></div>';
+    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+bossPaths+'</svg>'+labels+gates+dots+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
     bindJumps(detailEl);
     function checkedKeys(selector) {
       const buttons = [...detailEl.querySelectorAll(selector)];
@@ -1682,6 +1799,14 @@ function open(row) {
       const picked = checkedKeys(".pin-filter");
       detailEl.querySelectorAll(".mapstage .pin").forEach(el => showIf(el, picked));
     }
+    function applyNpcs() {
+      const picked = checkedKeys(".npc-filter");
+      detailEl.querySelectorAll(".mapstage .npc, .mapstage .npc-label").forEach(el => showIf(el, picked));
+    }
+    function applyBosses() {
+      const picked = checkedKeys(".boss-filter");
+      detailEl.querySelectorAll(".mapstage .boss, .mapstage .boss-label, .mapstage .boss-path").forEach(el => showIf(el, picked));
+    }
     function bindChecks(selector, apply) {
       detailEl.querySelectorAll(selector).forEach(btn => btn.onclick = () => {
         const next = !btn.classList.contains("on");
@@ -1690,12 +1815,31 @@ function open(row) {
         apply();
       });
     }
+    function bindBulk(group, selector, apply) {
+      detailEl.querySelectorAll('[data-bulk="'+group+'"]').forEach(btn => btn.onclick = () => {
+        const on = btn.dataset.on === "1";
+        detailEl.querySelectorAll(selector).forEach(tag => {
+          tag.classList.toggle("on", on);
+          tag.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        apply();
+      });
+    }
     bindChecks(".region-filter", applyRegions);
     bindChecks(".gate-filter", applyGates);
     bindChecks(".pin-filter", applyPins);
+    bindChecks(".npc-filter", applyNpcs);
+    bindChecks(".boss-filter", applyBosses);
+    bindBulk("region", ".region-filter", applyRegions);
+    bindBulk("gate", ".gate-filter", applyGates);
+    bindBulk("pin", ".pin-filter", applyPins);
+    bindBulk("npc", ".npc-filter", applyNpcs);
+    bindBulk("boss", ".boss-filter", applyBosses);
     applyRegions();
     applyGates();
     applyPins();
+    applyNpcs();
+    applyBosses();
     const mapwrap = detailEl.querySelector(".mapwrap");
     const mapstage = detailEl.querySelector(".mapstage");
     const mapsizer = detailEl.querySelector(".mapsizer");
