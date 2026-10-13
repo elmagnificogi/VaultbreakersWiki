@@ -1254,7 +1254,8 @@ function writeHtml(db) {
   .list-count { margin:0; padding:10px 12px 18px; color:var(--muted); font-size:12px; }
   .row { display:flex; gap:10px; align-items:center; width:100%; text-align:left; background:transparent; color:inherit; border:0; border-bottom:1px solid #262b3c; padding:8px 12px; cursor:pointer; }
   .row:hover, .row.active { background:#262c3e; }
-  .row img, .entry img, .hero img { width:42px; height:42px; object-fit:contain; background:#0e1118; border-radius:6px; image-rendering:auto; }
+  .row img, img.icon, .hero img { width:42px; height:42px; object-fit:contain; background:#0e1118; border-radius:6px; vertical-align:middle; image-rendering:auto; flex:0 0 auto; }
+  .hero img { width:84px; height:84px; }
   .hero img { width:84px; height:84px; }
   .row small, .muted { color:var(--muted); }
   section { padding:18px 22px 40px; overflow:auto; max-height: calc(100vh - 78px); }
@@ -1329,8 +1330,8 @@ let appliedUrl = "";
 let mapObserver = null;
 const lastByMode = { tables: null, sources: null, items: null, maps: null };
 function icon(src, alt) {
-  if (!src) return '<img alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">';
-  return '<img alt="'+(alt||"")+'" src="'+src+'">';
+  if (!src) return '<img class="icon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">';
+  return '<img class="icon" alt="'+(alt||"")+'" src="'+src+'">';
 }
 const tableById = {};
 const tableByEnum = {};
