@@ -63,12 +63,14 @@ jobs:
         run: |
           set -euo pipefail
           index=$(mktemp)
+          rm -f "$index"
           export GIT_AUTHOR_NAME="$(git log -1 --format='%an')"
           export GIT_AUTHOR_EMAIL="$(git log -1 --format='%ae')"
           export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
           export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
           GIT_INDEX_FILE="$index" git --work-tree=site add --all
           tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          rm -f "$index"
           commit=$(git commit-tree "$tree" -m "静态网页")
           git push origin "$commit:refs/tags/web-${GITHUB_SHA}"
 
