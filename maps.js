@@ -12,18 +12,21 @@ const MAP_DEFS = [
     id: "pinewood",
     scene: "22e8bc68e9df03c0af8b54ec8aaec7c0.bundle",
     texture: "6dfc96724fd67e223427f4e284491daf.bundle",
+    camera: "fbe10b298712e63a2b4c702469432f05.bundle",
     nameKey: "MapName_Pinewood",
   },
   {
     id: "refinery",
     scene: "b411e94175656f65f931de14528d785b.bundle",
     texture: "3b5fd3da52126ef35d7646afe469b8a3.bundle",
+    camera: "e15153d3ebdf26bc846fb0755b9cb8cd.bundle",
     nameKey: "MapName_Refinery",
   },
   {
     id: "dragonvault",
     scene: "bdaed0fc428a60db80ef56ea6258ee39.bundle",
     texture: "5b340e8f45322580fb9e7a6adbe84e02.bundle",
+    camera: "ba91089093bd8693b378e04d3bfa370f.bundle",
     nameKey: "MapName_Dragonvault",
   },
 ];
@@ -115,11 +118,73 @@ function asFloat(n) {
 }
 
 function toMapPercent(x, z, offsetX, offsetY, sizeX, sizeY) {
-  // Minimap camera looks down. Right is world +X, up is world +Z.
-  // This matches the in-game world map: farmland on the right, extract on the southeast shore.
+  // Minimap camera looks down (+90 deg around X). Right is world +X, up is world +Z.
   const u = (x - offsetX) / sizeX;
   const v = (z - offsetY) / sizeY;
   return { left: u * 100, top: (1 - v) * 100 };
+}
+
+// MinimapCameraBehaviour.ResizeMinimapToMatchWorldSize:
+// orthographic size = (max(MinimapSizeOverride) + MinimapPadding) * 0.5
+// The baked map is that square frustum. Padding is 15 world units on the full width.
+const MINIMAP_PADDING = 15;
+const frameCache = new Map();
+
+function mapFrame(def) {
+  const cached = frameCache.get(def.id);
+  if (cached) return cached;
+  const buf = fs.readFileSync(path.join(BUNDLE_DIR, def.camera));
+  const info = bundleInfo(buf);
+  const node = info.nodes.find((n) => !n.path.includes("."));
+  const sf = parseSerialized(extractRange(buf, info, node.offset, node.size));
+  const trType = sf.types.findIndex((t) => t.classId === 4);
+  const overType = sf.types.findIndex((t) => typeHas(t.node, "UseMinimapSizeOverride"));
+  const over = readObject(sf, sf.objects.find((o) => o.typeId === overType)).value;
+  const byPath = new Map(sf.objects.map((o) => [o.pathId.toString(), o]));
+  const go = byPath.get(String(over["#374"].pathId));
+  const comps = readObject(sf, go).value.m_Component || [];
+  let transformId = "";
+  for (const comp of comps) {
+    const ptr = comp.component || comp;
+    const obj = ptr && byPath.get(String(ptr.pathId));
+    if (obj && obj.typeId === trType) transformId = String(ptr.pathId);
+  }
+  const cache = new Map();
+  function worldOf(pathId, depth) {
+    const key = String(pathId);
+    if (cache.has(key)) return cache.get(key);
+    const obj = byPath.get(key);
+    if (!obj || depth > 16) return null;
+    const value = readObject(sf, obj).value;
+    const localPos = [asFloat(value.m_LocalPosition.x), asFloat(value.m_LocalPosition.y), asFloat(value.m_LocalPosition.z)];
+    const localRot = [asFloat(value.m_LocalRotation.x), asFloat(value.m_LocalRotation.y), asFloat(value.m_LocalRotation.z), asFloat(value.m_LocalRotation.w)];
+    let pos = localPos;
+    let rot = localRot;
+    const father = value.m_Father && String(value.m_Father.pathId);
+    if (father && father !== "0") {
+      const parent = worldOf(father, depth + 1);
+      if (parent) {
+        const rotated = quatRotate(parent.rot, localPos);
+        pos = [parent.pos[0] + rotated[0], parent.pos[1] + rotated[1], parent.pos[2] + rotated[2]];
+        rot = quatMul(parent.rot, localRot);
+      }
+    }
+    const result = { pos, rot };
+    cache.set(key, result);
+    return result;
+  }
+  const cam = worldOf(transformId, 0);
+  const override = Math.max(asFloat(over.MinimapSizeOverride.x), asFloat(over.MinimapSizeOverride.y));
+  const size = override + MINIMAP_PADDING;
+  const half = size / 2;
+  const frame = {
+    offsetX: cam.pos[0] - half,
+    offsetY: cam.pos[2] - half,
+    sizeX: size,
+    sizeY: size,
+  };
+  frameCache.set(def.id, frame);
+  return frame;
 }
 
 function quatRotate(q, v) {
@@ -245,11 +310,12 @@ function collectPins(def) {
   const worldObj = sf.objects.find((o) => o.typeId === worldType);
   if (!worldObj) return [];
   const world = readObject(sf, worldObj).value;
-  const sizeX = asFloat(world._worldSize.x);
-  const sizeY = asFloat(world._worldSize.y);
-  const offsetX = asFloat(world._worldOffset.x);
-  const offsetY = asFloat(world._worldOffset.y);
-  if (!sizeX || !sizeY) return [];
+  if (!asFloat(world._worldSize.x) || !asFloat(world._worldSize.y)) return [];
+  const frame = mapFrame(def);
+  const sizeX = frame.sizeX;
+  const sizeY = frame.sizeY;
+  const offsetX = frame.offsetX;
+  const offsetY = frame.offsetY;
   const byPath = new Map();
   for (const obj of sf.objects) byPath.set(obj.pathId.toString(), obj);
   const gos = sf.objects.filter((o) => o.typeId === goType).sort((a, b) => a.byteStart - b.byteStart);
@@ -379,11 +445,12 @@ function collectEntrances(def) {
   const worldObj = sf.objects.find((o) => o.typeId === worldType);
   if (!worldObj) return [];
   const world = readObject(sf, worldObj).value;
-  const sizeX = asFloat(world._worldSize.x);
-  const sizeY = asFloat(world._worldSize.y);
-  const offsetX = asFloat(world._worldOffset.x);
-  const offsetY = asFloat(world._worldOffset.y);
-  if (!sizeX || !sizeY) return [];
+  if (!asFloat(world._worldSize.x) || !asFloat(world._worldSize.y)) return [];
+  const frame = mapFrame(def);
+  const sizeX = frame.sizeX;
+  const sizeY = frame.sizeY;
+  const offsetX = frame.offsetX;
+  const offsetY = frame.offsetY;
   const byPath = new Map();
   for (const obj of sf.objects) byPath.set(obj.pathId.toString(), obj);
   const gos = sf.objects.filter((o) => o.typeId === goType).sort((a, b) => a.byteStart - b.byteStart);
@@ -507,111 +574,7 @@ function collectEntrances(def) {
       at += needle.length;
     }
   }
-  const mapFile = path.join(__dirname, "maps", def.id + ".png");
-  if (fs.existsSync(mapFile)) {
-    const png = PNG.sync.read(fs.readFileSync(mapFile));
-    for (const point of found) {
-      const mode = point.kind === "extract" ? "gate" : point.titleKey === "Name_AdvancedNpc_PortalWolfswood3" ? "field" : "";
-      const snapped = mode ? snapSouthOntoMap(png, point.left, point.top, mode) : null;
-      if (!snapped) continue;
-      point.left = snapped.left;
-      point.top = snapped.top;
-    }
-  }
   return found;
-}
-
-function snapFieldEast(png, x0, y0) {
-  // The in-game icon sits on the crop block's northeast corner: void above and to the right,
-  // field immediately left and below. The village coastline further north is a different corner.
-  function sample(x, y) {
-    if (x < 0 || y < 0 || x >= png.width || y >= png.height) return [0, 0, 0];
-    const i = (y * png.width + x) * 4;
-    return [png.data[i], png.data[i + 1], png.data[i + 2]];
-  }
-  function isVoid(c) {
-    const dr = c[0] - 24;
-    const dg = c[1] - 16;
-    const db = c[2] - 12;
-    return dr * dr + dg * dg + db * db < 800;
-  }
-  function isLand(c) {
-    return c[0] + c[1] + c[2] > 120;
-  }
-  let best = null;
-  for (let y = y0 - 50; y <= y0 + 30; y += 2) {
-    for (let x = x0 + 20; x <= x0 + 220; x += 2) {
-      if (!isLand(sample(x, y))) continue;
-      let voidAbove = 0;
-      let voidRight = 0;
-      let landLeft = 0;
-      let landBelow = 0;
-      for (let k = 6; k <= 28; k += 4) {
-        if (isVoid(sample(x, y - k))) voidAbove++;
-        if (isVoid(sample(x + k, y))) voidRight++;
-        if (isLand(sample(x - k, y))) landLeft++;
-        if (isLand(sample(x, y + k))) landBelow++;
-      }
-      if (voidAbove < 4 || voidRight < 4 || landLeft < 3 || landBelow < 3) continue;
-      const score = x - Math.abs(y - y0) * 0.4;
-      if (!best || score > best.score) best = { x, y, score };
-    }
-  }
-  if (!best) return null;
-  return mapPercent(png, best.x, best.y);
-}
-
-function voidPixel(png, x, y) {
-  const i = (y * png.width + x) * 4;
-  const dr = png.data[i] - 24;
-  const dg = png.data[i + 1] - 16;
-  const db = png.data[i + 2] - 12;
-  return dr * dr + dg * dg + db * db < 400;
-}
-
-function mapPercent(png, x, y) {
-  return {
-    left: Math.round(x / (png.width - 1) * 1000) / 10,
-    top: Math.round(y / (png.height - 1) * 1000) / 10,
-  };
-}
-
-// On the in-game world map both of these sit on the east edge.
-// The authored pivots fall inland: the pine-fields portal in the middle of 农田,
-// and the solo-extract rune west of the lit shore gate.
-function snapSouthOntoMap(png, left, top, mode) {
-  const x0 = Math.round(left / 100 * (png.width - 1));
-  const y0 = Math.round(top / 100 * (png.height - 1));
-  if (mode === "gate") {
-    let best = null;
-    for (let x = x0; x < Math.min(png.width, x0 + 280); x++) {
-      for (let y = y0 - 40; y <= y0 + 40; y++) {
-        if (y < 0 || y >= png.height || voidPixel(png, x, y)) continue;
-        const i = (y * png.width + x) * 4;
-        const r = png.data[i];
-        const g = png.data[i + 1];
-        if (r < 160 || g < 120) continue;
-        const sum = r + g + png.data[i + 2];
-        if (!best || sum > best.sum) best = { x, y, sum };
-      }
-    }
-    if (best && best.x - x0 >= 40) return mapPercent(png, best.x, best.y);
-  }
-  if (mode === "field") return snapFieldEast(png, x0, y0);
-  let last = y0;
-  let dark = 0;
-  for (let y = y0; y < Math.min(png.height, y0 + 220); y++) {
-    const i = (y * png.width + x0) * 4;
-    const sum = png.data[i] + png.data[i + 1] + png.data[i + 2];
-    if (sum > 180) {
-      last = y;
-      dark = 0;
-    } else if (++dark >= 8) {
-      break;
-    }
-  }
-  if (last - y0 < 40) return null;
-  return mapPercent(png, x0, last);
 }
 
 const COVER_BUNDLES = {
@@ -842,13 +805,8 @@ function collectRegions(def) {
   const worldObj = sf.objects.find((o) => o.typeId === worldType);
   if (!worldObj) return [];
   const world = readObject(sf, worldObj).value;
-  const bounds = {
-    sizeX: asFloat(world._worldSize.x),
-    sizeY: asFloat(world._worldSize.y),
-    offsetX: asFloat(world._worldOffset.x),
-    offsetY: asFloat(world._worldOffset.y),
-  };
-  if (!bounds.sizeX || !bounds.sizeY) return [];
+  if (!asFloat(world._worldSize.x) || !asFloat(world._worldSize.y)) return [];
+  const bounds = mapFrame(def);
   const byPath = new Map();
   for (const obj of sf.objects) byPath.set(obj.pathId.toString(), obj);
   const gos = sf.objects.filter((o) => o.typeId === goType).sort((a, b) => a.byteStart - b.byteStart);
@@ -992,16 +950,23 @@ function collectRegions(def) {
                 const local = mesh.points[index];
                 if (!local) continue;
                 const rotated = quatRotate(placed.rot, [local[0] * placed.scale[0], local[1] * placed.scale[1], 0]);
-                let x = placed.pos[0] + rotated[0];
+                const x = placed.pos[0] + rotated[0];
                 const z = placed.pos[2] + rotated[2];
-                // The round courtyard on the baked minimap sits 26 world units east of this cover's pivot.
-                if (title === "Area4 - MageTower") x += 26;
                 const mapped = toMapPercent(x, z, bounds.offsetX, bounds.offsetY, bounds.sizeX, bounds.sizeY);
                 pathPts.push(mapped);
               }
               const inside = pathPts.filter((p) => p.left >= -8 && p.left <= 108 && p.top >= -8 && p.top <= 108).length;
               if (inside >= pathPts.length * 0.5) {
-                for (const fitted of keepLand(pathPts)) paths.push(fitted);
+                const fitted = keepLand(pathPts);
+                if (fitted.length) {
+                  for (const group of fitted) paths.push(group);
+                } else {
+                  const mid = pathPts.reduce((s, p) => ({ left: s.left + p.left, top: s.top + p.top }), { left: 0, top: 0 });
+                  mid.left /= pathPts.length;
+                  mid.top /= pathPts.length;
+                  // Covers that hug the void still belong to the landmark under their center.
+                  if (onLand(mid)) paths.push(pathPts);
+                }
               }
             }
             if (paths.length) pieces.push({ title, paths });
