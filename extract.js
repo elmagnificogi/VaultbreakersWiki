@@ -5,6 +5,7 @@ const { parseUnityFS, extractNode } = require("./unityfs");
 const { parseSerialized, readObject } = require("./serialized");
 const { decodeTexture } = require("./dxt");
 const { extractGameMaps } = require("./maps");
+const { fillCreaturePortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
 const GAME = path.resolve(ROOT, "..");
@@ -531,7 +532,7 @@ function main() {
     return "";
   }
   function describeLoot(enumName) {
-    if (!/Chest|Lockbox|LockBox|DirtMound/.test(enumName)) return null;
+    if (!/Chest|Lockbox|LockBox|DirtMound|BahraCache/.test(enumName)) return null;
     let role = "";
     let name = enumName;
     if (name.endsWith("CraftingMatTable")) {
@@ -604,7 +605,7 @@ function main() {
       title = clean("MapName_GreaterVoidPortal") + box;
       place = clean("MapName_GreaterVoidPortal");
       look = huge;
-      icon = icons.chestverylarge || icon;
+      icon = "icons/ChestWarforge.png";
     } else if (/RocketCrash/.test(name)) {
       look = raw("RocketLaunchCrashNotificationMessage").replace(/[！!。]/g, "");
       title = look + box;
@@ -617,29 +618,34 @@ function main() {
       title = withDigit(clean("MapName_Dragonvault") + box + "掉落集合");
       place = clean("MapName_Dragonvault");
       look = huge;
-      icon = icons.chestverylarge || icon;
+      icon = "icons/ChestDragonGold.png";
     } else if (/VaultChest/.test(name)) {
       title = withDigit(clean("MapName_Dragonvault") + box);
       place = clean("MapName_Dragonvault");
       look = huge;
-      icon = icons.chestverylarge || icon;
+      icon = "icons/ChestDragonGold.png";
+    } else if (/ExtraHigh2/.test(name)) {
+      title = withDigit(ashenGreat);
+      look = ashen;
+      icon = "icons/ChestDragonSilver.png";
     } else if (/ExtraHigh/.test(name)) {
-      title = withDigit(huge);
-      look = huge;
-      icon = icons.chestverylarge || icon;
-    } else if (/High/.test(name)) {
       title = ashenGreat;
-      look = ashenGreat;
-      icon = icons.chestlarge || icon;
+      look = ashen;
+      icon = "icons/ChestDragonGold.png";
+    } else if (/High/.test(name)) {
+      title = ashenSmall;
+      look = ashenSmall;
+      icon = "icons/ChestDragonGold.png";
     } else if (/Large/.test(name)) {
       title = large;
       look = large;
       icon = icons.chestlarge || icon;
     } else if (/Medium/.test(name)) {
       const who = /Ghost/.test(name) ? ghost : /Scrat/.test(name) ? scrat : "";
-      title = who ? who + box : ashen;
-      look = who ? box : ashen;
-      icon = icons.chestlarge || icon;
+      if (!who) return null;
+      title = who + box;
+      look = box;
+      icon = /Scrat/.test(name) ? "icons/ChestScrat.png" : (icons.chestlarge || icon);
     } else if (/Ghost/.test(name)) {
       title = ghost + small;
       look = small;
@@ -649,9 +655,10 @@ function main() {
     } else if (/Scrat/.test(name)) {
       title = scrat + small;
       look = small;
-    } else if (/LootChest/.test(name)) {
-      title = withDigit(ashenSmall);
-      look = ashenSmall;
+    } else if (/BahraCache/.test(name)) {
+      title = clean("BahrasChest");
+      look = title;
+      icon = "icons/ChestBahra.png";
     } else return null;
     if (!title || !/[\u4e00-\u9fff]/.test(title)) return null;
     return { title: withRole(title), place, look, icon };
@@ -1071,6 +1078,7 @@ function main() {
   for (const source of sources) {
     source.category = sourceCategory(source.title + " " + source.english + " " + source.asset);
     source.icon = iconFor(source.portrait) || iconFor(String(source.portrait || "").replace(/_Portrait$/i, "")) || bestIcon(source.portrait, []) || null;
+    if (/BahrasChest|BahraCache/.test(source.asset || "")) source.icon = "icons/ChestBahra.png";
   }
   console.log(
     "monster portraits",
@@ -1078,6 +1086,8 @@ function main() {
     "named",
     sources.filter((s) => s.portrait).length
   );
+  const creatureShots = fillCreaturePortraits(sources);
+  console.log("creature fronts", creatureShots);
   for (const source of sources) {
     source.refs = source.refs.map((ref) => ({
       ...ref,
@@ -1087,7 +1097,7 @@ function main() {
   }
   for (const table of dropTables) {
     const label = table.english || table.title;
-    if (!/chest|lockbox|lock box|dirt mound|crate/i.test(label)) continue;
+    if (!/chest|lockbox|lock box|dirt mound|crate|bahra cache/i.test(label)) continue;
     sources.push({
       asset: table.asset,
       title: table.title,
@@ -1224,6 +1234,12 @@ function writeHtml(db) {
   a.gh svg { width:14px; height:14px; display:block; }
   input, select { background:#0e1118; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   input { min-width:260px; }
+  .search { position:relative; }
+  .search-history { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 4px); background:#1c2030; border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+  .search-history[hidden] { display:none; }
+  .search-history p { margin:4px 8px; color:var(--muted); font-size:12px; }
+  .search-history button { display:block; width:100%; text-align:left; background:transparent; color:inherit; border:0; border-radius:6px; padding:7px 8px; cursor:pointer; font:inherit; }
+  .search-history button:hover { background:#262c3e; }
   main { display:grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 78px); }
   aside { border-right:1px solid var(--line); overflow:auto; max-height: calc(100vh - 78px); }
   .row { display:flex; gap:10px; align-items:center; width:100%; text-align:left; background:transparent; color:inherit; border:0; border-bottom:1px solid #262b3c; padding:8px 12px; cursor:pointer; }
@@ -1273,7 +1289,10 @@ function writeHtml(db) {
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张。</p>
     <p class="meta">作者 elmagnifico · 版本 v0.1 · 对应游戏版本 1.0（Steam build 25803617） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
-  <input id="q" placeholder="搜索怪物、箱子、物品、掉落表" />
+  <div class="search">
+    <input id="q" placeholder="搜索怪物、箱子、物品、掉落表" autocomplete="off" />
+    <div id="history" class="search-history" hidden></div>
+  </div>
   <select id="cat"></select>
   <div class="tabs">
     <button id="tab-tables" class="on">掉落表</button>
@@ -1293,8 +1312,11 @@ const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
 const qEl = document.getElementById("q");
 const catEl = document.getElementById("cat");
+const historyEl = document.getElementById("history");
 let mode = "tables";
 let current = null;
+let historyLock = false;
+let appliedUrl = "";
 let mapObserver = null;
 const cats = ["全部", ...new Set([...db.dropTables.map(t => t.category), ...db.sources.map(s => s.category)])].sort();
 catEl.innerHTML = cats.map(c => '<option>'+c+'</option>').join("");
@@ -1307,6 +1329,53 @@ const tableByEnum = {};
 for (const t of db.dropTables) {
   if (t.id != null) tableById[t.id] = t;
   tableByEnum[t.enumName] = t;
+}
+const directOrigin = {};
+for (const source of db.sources) {
+  for (const ref of source.refs) {
+    if (!directOrigin[ref.table]) directOrigin[ref.table] = new Set();
+    directOrigin[ref.table].add(source.category);
+  }
+}
+const parentEnums = {};
+for (const table of db.dropTables) {
+  for (const entry of table.entries) {
+    if (!entry.nestedEnum) continue;
+    if (!parentEnums[entry.nestedEnum]) parentEnums[entry.nestedEnum] = [];
+    parentEnums[entry.nestedEnum].push(table.enumName);
+  }
+}
+const originCache = {};
+function originKinds(enumName) {
+  if (!enumName) return new Set();
+  if (originCache[enumName]) return originCache[enumName];
+  const kinds = new Set();
+  originCache[enumName] = kinds;
+  const local = directOrigin[enumName];
+  if (local) for (const kind of local) kinds.add(kind);
+  for (const parent of parentEnums[enumName] || []) for (const kind of originKinds(parent)) kinds.add(kind);
+  return kinds;
+}
+function originTag(enumName) {
+  const kinds = originKinds(enumName);
+  const mob = kinds.has("怪物");
+  const loot = kinds.has("搜刮点");
+  if (mob && loot) return "怪物/搜刮";
+  if (mob) return "怪物";
+  if (loot) return "搜刮";
+  if (kinds.has("工坊与商人")) return "商人";
+  return "";
+}
+function sourceTag(category) {
+  if (category === "怪物") return "怪物";
+  if (category === "搜刮点") return "搜刮";
+  if (category === "工坊与商人") return "商人";
+  return "";
+}
+function withTag(title, tag) {
+  const text = String(title || "");
+  if (!tag || text.endsWith(" · " + tag)) return text;
+  return text + " · " + tag;
 }
 function entryPortion(table, entry) {
   if (entry.dropMode === 1) return (entry.percent || 0) / 100;
@@ -1353,16 +1422,32 @@ function rarityText(entry) {
 function filtered() {
   const q = qEl.value.trim().toLowerCase();
   const cat = catEl.value;
-  if (mode === "tables") return db.dropTables.filter(t => (cat==="全部"||t.category===cat) && (!q || (t.title+" "+(t.english||"")+" "+t.enumName+" "+t.entries.map(e=>e.itemName+" "+(e.itemEnglish||"")+" "+e.nestedName).join(" ")).toLowerCase().includes(q)));
-  if (mode === "sources") return db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>r.title).join(" ")).toLowerCase().includes(q)));
+  if (mode === "tables") return db.dropTables.filter(t => (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+t.entries.map(e=>e.itemName+" "+(e.itemEnglish||"")+" "+named(e.nestedName, e.nestedEnum)).join(" ")).toLowerCase().includes(q)));
+  if (mode === "sources") return db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (withTag(shown(s.title), sourceTag(s.category))+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>named(r.title, r.table)).join(" ")).toLowerCase().includes(q)));
   if (mode === "maps") return (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ")).toLowerCase().includes(q));
   return db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
+}
+function shown(text) {
+  const value = String(text || "");
+  const role = value.endsWith("贵重") ? "贵重" : value.endsWith("材料") ? "材料" : "";
+  if (!role) return value;
+  let base = value.slice(0, -role.length);
+  if (base.endsWith("·")) base = base.slice(0, -1);
+  if (!base) return value;
+  const hit = db.sources.some(s => {
+    if (s.title === base && (s.category === "怪物" || s.category === "搜刮点")) return true;
+    return s.category === "搜刮点" && (s.title === base + "·" + role || s.title === base + role);
+  });
+  return hit ? base : value;
+}
+function named(title, enumName) {
+  return withTag(shown(title), originTag(enumName));
 }
 function renderList() {
   const rows = filtered();
   listEl.innerHTML = rows.slice(0, 400).map((row, i) => {
-    const title = row.title;
-    const sub = mode==="tables" ? (row.entries.length+" 项 · "+row.category) : mode==="sources" ? (row.place || row.refs.map(r=>r.title).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点") : ((row.places||[]).join("、"));
+    const title = mode==="tables" ? named(row.title, row.enumName) : mode==="sources" ? withTag(shown(row.title), sourceTag(row.category)) : row.title;
+    const sub = mode==="tables" ? (row.entries.length+" 项 · "+row.category) : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点") : ((row.places||[]).join("、"));
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("") || '<p class="muted" style="padding:12px">没有匹配结果</p>';
@@ -1370,6 +1455,7 @@ function renderList() {
     listEl.querySelectorAll(".row").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     open(filtered()[Number(btn.dataset.i)]);
+    pushView();
   });
 }
 function portraitOf(table) {
@@ -1378,18 +1464,8 @@ function portraitOf(table) {
   return owner ? owner.icon : "";
 }
 function show(kind, row) {
-  mode = kind;
-  document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
-  document.getElementById("tab-"+kind).classList.add("on");
-  renderList();
-  open(row);
-  const rows = filtered();
-  const idx = rows.findIndex(r => r === row || (r.enumName && r.enumName === row.enumName) || (r.id != null && row.id != null && r.id === row.id && r.name === row.name) || (r.asset && r.asset === row.asset) || (r.image && r.image === row.image));
-  const btn = idx >= 0 && idx < 400 ? listEl.querySelector('.row[data-i="'+idx+'"]') : null;
-  if (btn) {
-    btn.classList.add("active");
-    btn.scrollIntoView({ block: "nearest" });
-  }
+  present(kind, row);
+  pushView();
 }
 function openTable(name) {
   const table = db.dropTables.find(t => t.enumName === name || t.title === name);
@@ -1414,14 +1490,14 @@ function open(row) {
   if (mode === "tables") {
     const weightRows = row.entries.map(e => {
       const what = e.outcome === 1
-        ? '<a data-jump="'+(e.nestedEnum||e.nestedName)+'">'+(e.nestedName||"子表")+'</a>'
+        ? '<a data-jump="'+(e.nestedEnum||e.nestedName)+'">'+named(e.nestedName||"子表", e.nestedEnum)+'</a>'
         : '<a data-item="'+e.item+'">'+icon(e.itemIcon, e.itemName)+' '+e.itemName+'</a>'+(e.outcome===2?' <span class="tag">配方 '+e.recipe+'</span>':'');
       const width = Math.max(2, Math.min(100, entryPortion(row, e) * 100));
       return '<tr><td>'+what+'</td><td>'+amount(e)+'</td><td>'+(db.dropMode[e.dropMode]||e.dropMode)+'</td><td>'+chance(row,e)+'<div class="bar"><span style="width:'+width+'%"></span></div></td><td>'+rarityText(e)+(e.flagText||[]).map(f=>'<span class="tag">'+f+'</span>').join("")+'</td></tr>';
     }).join("");
     const users = db.sources.filter(s => s.refs.some(r => r.table === row.enumName));
     const where = [row.place && ("地点："+row.place), row.look && row.look !== row.title && !String(row.title).includes(row.look) && ("样子："+row.look)].filter(Boolean).join(" · ");
-    detailEl.innerHTML = '<div class="hero">'+icon(portraitOf(row), row.title)+'<div><h2>'+row.title+'</h2><div class="muted">'+row.category+' · 总权重 '+row.totalWeight+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>'
+    detailEl.innerHTML = '<div class="hero">'+icon(portraitOf(row), named(row.title, row.enumName))+'<div><h2>'+named(row.title, row.enumName)+'</h2><div class="muted">'+row.category+' · 总权重 '+row.totalWeight+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>'
       + '<table><thead><tr><th>掉落</th><th>数量</th><th>方式</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+weightRows+'</tbody></table>'
       + '<h3>谁会掉这个</h3>' + (users.length ? users.map(s => '<div class="tag">'+s.title+'</div>').join("") : '<p class="muted">没有在单位或容器配置里找到直接引用。它可能是别的掉落表里的子表。</p>');
     bindJumps(detailEl);
@@ -1431,16 +1507,16 @@ function open(row) {
       const drops = table ? flattenDrops(table, 1, 0, new Set()).sort((a, b) => b.chance - a.chance) : [];
       const body = drops.map(drop => {
         const what = drop.kind === "table"
-          ? '<a data-jump="'+drop.enumName+'">'+drop.title+'</a>'
+          ? '<a data-jump="'+drop.enumName+'">'+named(drop.title, drop.enumName)+'</a>'
           : '<a data-item="'+drop.id+'">'+icon(drop.icon, drop.title)+' '+drop.title+'</a>'+(drop.recipe ? ' <span class="tag">配方 '+drop.recipeId+'</span>' : '');
         const extra = (drop.rarity ? drop.rarity + " " : "") + (drop.flags || []).map(flag => '<span class="tag">'+flag+'</span>').join("");
         return '<tr><td>'+what+'</td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div></td><td>'+extra+'</td></tr>';
       }).join("");
-      return '<h3><a data-jump="'+ref.table+'">'+((table && table.title) || ref.title)+'</a></h3>'
+      return '<h3><a data-jump="'+ref.table+'">'+named((table && table.title) || ref.title, (table && table.enumName) || ref.table)+'</a></h3>'
         + '<table><thead><tr><th>掉落</th><th>数量</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+body+'</tbody></table>';
     }).join("");
     const where = [row.place && ("地点："+row.place), row.look && row.look !== row.title && !String(row.title).includes(row.look) && ("样子："+row.look)].filter(Boolean).join(" · ");
-    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + blocks;
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, withTag(shown(row.title), sourceTag(row.category)))+'<div><h2>'+withTag(shown(row.title), sourceTag(row.category))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + blocks;
     bindJumps(detailEl);
   } else if (mode === "items") {
     const from = [];
@@ -1450,7 +1526,7 @@ function open(row) {
     const places = (row.places||[]).join("、");
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
       + '<table><thead><tr><th>掉落表</th><th>数量</th><th>几率</th></tr></thead><tbody>'
-      + from.map(({table,e}) => '<tr><td><a data-jump="'+table.enumName+'">'+table.title+'</a></td><td>'+amount(e)+'</td><td>'+chance(table,e)+'</td></tr>').join("")
+      + from.map(({table,e}) => '<tr><td><a data-jump="'+table.enumName+'">'+named(table.title, table.enumName)+'</a></td><td>'+amount(e)+'</td><td>'+chance(table,e)+'</td></tr>').join("")
       + '</tbody></table>';
     bindJumps(detailEl);
   } else if (mode === "maps") {
@@ -1644,19 +1720,182 @@ function open(row) {
 }
 function setMode(next) {
   mode = next;
-  document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
-  document.getElementById("tab-"+next).classList.add("on");
-  renderList();
   const rows = filtered();
-  if (rows[0]) open(rows[0]); else detailEl.innerHTML = "";
+  if (rows[0]) show(next, rows[0]);
+  else {
+    document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
+    document.getElementById("tab-"+next).classList.add("on");
+    renderList();
+    current = null;
+    detailEl.innerHTML = "";
+    pushView();
+  }
+}
+function rowKey(kind, row) {
+  if (!row) return "";
+  if (kind === "tables") return "t:" + row.enumName;
+  if (kind === "sources") return "s:" + row.asset + "|" + row.title;
+  if (kind === "items") return "i:" + row.id;
+  return "m:" + (row.image || row.title);
+}
+function rowByKey(key) {
+  const split = String(key || "").indexOf(":");
+  if (split < 0) return null;
+  const kind = key.slice(0, split);
+  const rest = key.slice(split + 1);
+  if (kind === "t") return db.dropTables.find(t => t.enumName === rest) || null;
+  if (kind === "s") {
+    const bar = rest.indexOf("|");
+    const asset = bar < 0 ? rest : rest.slice(0, bar);
+    const title = bar < 0 ? "" : rest.slice(bar + 1);
+    return db.sources.find(s => s.asset === asset && s.title === title) || db.sources.find(s => s.asset === asset) || null;
+  }
+  if (kind === "i") return db.items.find(it => String(it.id) === rest) || null;
+  return (db.maps || []).find(m => m.image === rest || m.title === rest) || null;
+}
+function viewState() {
+  return { mode, id: rowKey(mode, current), q: qEl.value, cat: catEl.value || "全部" };
+}
+function stateUrl(state) {
+  return "#" + [state.mode, encodeURIComponent(state.id || ""), encodeURIComponent(state.cat || "全部")].join("/");
+}
+function decodeState(hash) {
+  const raw = String(hash || "").replace(/^#/, "");
+  if (!raw) return null;
+  const parts = raw.split("/");
+  const nextMode = parts[0];
+  if (!["tables", "sources", "items", "maps"].includes(nextMode)) return null;
+  let id = "";
+  let q = "";
+  let cat = "全部";
+  try {
+    id = decodeURIComponent(parts[1] || "");
+    cat = decodeURIComponent(parts[2] || "全部");
+  } catch (e) { return null; }
+  return { mode: nextMode, id, q, cat };
+}
+function sameState(a, b) {
+  return !!a && !!b && a.mode === b.mode && a.id === b.id && a.q === b.q && a.cat === b.cat;
+}
+function writeState(state, replace) {
+  const url = stateUrl(state);
+  appliedUrl = url;
+  historyLock = true;
+  try {
+    if (replace) history.replaceState(state, "", url);
+    else history.pushState(state, "", url);
+  } catch (e) {
+    if (replace) location.replace(url);
+    else location.hash = url;
+  }
+  historyLock = false;
+}
+function pushView() {
+  const state = viewState();
+  if (sameState(history.state, state)) return;
+  writeState(state, false);
+  rememberSearch(state.q);
+}
+function replaceView() {
+  writeState(viewState(), true);
+}
+function present(kind, row) {
+  mode = kind;
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
+  document.getElementById("tab-"+kind).classList.add("on");
+  renderList();
+  if (row) open(row);
+  else { current = null; detailEl.innerHTML = ""; }
+  const rows = filtered();
+  const idx = row ? rows.findIndex(r => r === row || (r.enumName && r.enumName === row.enumName) || (r.id != null && row.id != null && r.id === row.id && r.name === row.name) || (r.asset && r.asset === row.asset && r.title === row.title) || (r.image && r.image === row.image)) : -1;
+  const btn = idx >= 0 && idx < 400 ? listEl.querySelector('.row[data-i="'+idx+'"]') : null;
+  if (btn) {
+    btn.classList.add("active");
+    btn.scrollIntoView({ block: "nearest" });
+  }
+}
+function applyView(state) {
+  if (!state) return;
+  const url = stateUrl(state);
+  if (url === appliedUrl) return;
+  appliedUrl = url;
+  qEl.value = state.q || "";
+  if ([...catEl.options].some(option => option.value === state.cat)) catEl.value = state.cat;
+  mode = state.mode;
+  present(state.mode, rowByKey(state.id) || filtered()[0] || null);
+}
+const SEARCH_KEY = "vaultbreakers-wiki-searches";
+function loadSearches() {
+  try { return JSON.parse(localStorage.getItem(SEARCH_KEY) || "[]").filter(item => typeof item === "string" && item.trim()); }
+  catch (e) { return []; }
+}
+function rememberSearch(text) {
+  const q = String(text || "").trim();
+  if (!q) return;
+  try {
+    const next = [q, ...loadSearches().filter(item => item !== q)].slice(0, 12);
+    localStorage.setItem(SEARCH_KEY, JSON.stringify(next));
+  } catch (e) {}
+}
+function renderHistory() {
+  const q = qEl.value.trim().toLowerCase();
+  const items = loadSearches().filter(item => !q || item.toLowerCase().includes(q)).slice(0, 8);
+  if (!items.length) { historyEl.hidden = true; historyEl.innerHTML = ""; return; }
+  historyEl.innerHTML = '<p>搜索历史</p>' + items.map(item => '<button type="button" data-q="'+item.replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'">'+item.replace(/[&<>]/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[ch]))+'</button>').join("");
+  historyEl.hidden = false;
+  historyEl.querySelectorAll("button").forEach(btn => {
+    btn.onmousedown = (event) => event.preventDefault();
+    btn.onclick = () => {
+      qEl.value = btn.dataset.q || "";
+      renderList();
+      replaceView();
+      historyEl.hidden = true;
+    };
+  });
+}
+function applyHash() {
+  const state = decodeState(location.hash);
+  if (state) applyView(state);
 }
 document.getElementById("tab-tables").onclick = () => setMode("tables");
 document.getElementById("tab-sources").onclick = () => setMode("sources");
 document.getElementById("tab-items").onclick = () => setMode("items");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
-qEl.oninput = () => { renderList(); };
-catEl.onchange = () => { renderList(); };
-setMode("sources");
+let searchTimer = 0;
+qEl.oninput = () => {
+  renderList();
+  replaceView();
+  renderHistory();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => rememberSearch(qEl.value), 600);
+};
+qEl.onfocus = () => renderHistory();
+qEl.onblur = () => { rememberSearch(qEl.value); setTimeout(() => { historyEl.hidden = true; }, 160); };
+qEl.onkeydown = (event) => {
+  if (event.key === "Enter") { rememberSearch(qEl.value); historyEl.hidden = true; }
+  if (event.key === "Escape") historyEl.hidden = true;
+};
+catEl.onchange = () => { renderList(); pushView(); };
+window.addEventListener("popstate", (event) => {
+  if (historyLock) return;
+  if (event.state) applyView(event.state);
+  else applyHash();
+});
+window.addEventListener("hashchange", () => {
+  if (historyLock) return;
+  applyHash();
+});
+mode = "sources";
+{
+  const saved = decodeState(location.hash);
+  const savedRow = saved && rowByKey(saved.id);
+  if (saved && savedRow) {
+    qEl.value = saved.q || "";
+    if ([...catEl.options].some(option => option.value === saved.cat)) catEl.value = saved.cat;
+    present(saved.mode, savedRow);
+  } else if (filtered()[0]) present("sources", filtered()[0]);
+  replaceView();
+}
 </script>
 </body>
 </html>`;

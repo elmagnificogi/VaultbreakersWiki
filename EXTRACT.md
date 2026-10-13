@@ -163,20 +163,20 @@ flags：`2` 仅本职业可用，`4` 占位，`8` 忽略稀有度，`16` 配方�
 
 没有嵌入元素、但有某个 `*DropTable` 整数字段（排除 `TotalWeight`）的对象，记成来源（怪物、容器、商人）。来源分类看标题、英文名和资产名：工坊与商人、搜刮点、其余算怪物。箱子类掉落表还会再推一条「搜刮点」来源，图标优先用 `describeLoot` 配的箱子图。
 
-怪物材料表：标题以「材料」结尾，且去掉这两个字后**恰好等于**某个怪物来源的标题，就去掉这个后缀。箱子和藏匿点的「材料」不去，因为它们的来源分类不是「怪物」。不要去掉「贵重」。
+怪物材料表：标题以「材料」结尾，且去掉这两个字后**恰好等于**某个怪物来源的标题，就去掉这个后缀。贵重表、箱子和藏匿点的数据标题仍保留「材料」「贵重」。页面显示时，怪物藏掉结尾的「贵重」；搜刮点藏掉「·材料」「·贵重」，以及「嘶科鼠帐篷材料」这种直接接在名字后的后缀。去掉后对不上怪物或搜刮点来源标题的不藏。跳转仍用枚举名。掉落表和来源的显示名会加上「 · 怪物」「 · 搜刮」或「 · 商人」；两边都会掉的表写成「 · 怪物/搜刮」。数据标题不加这几个字。
 
 怪物头像只用 `PortraitSpriteName`。值是 `TempIcon` 或空则不用。显示时去掉末尾 `.png`，再按这个名字找 `icons/`。写 PNG 的主循环（图标包）已经 `rotate180`。**文件已存在就 `continue`，不要再转。** 另有一个补充扫描：小于 1MB 且内容含 `_Portrait` 的 bundle 会再导出头像，这条路径目前每次都会重写并再次 `rotate180`。不要把主循环已经转正的图标再转一次，也不要给图标加 90°。
 
-灰爪箱大小是按枚举名推测的，没有客户端文本直接把某个 prefab 写成「这就是小型灰爪箱」。`describeLoot` 把名字模式对到本地化 key，页面上的字来自这些 key，key 没有中文就不要编：
+灰爪箱的中文来自本地化 key，不是物品名。`SmallAshenclawChest` = 小型灰爪箱，`AshenclawChest` = 灰爪箱，`GreaterAshenclawChest` = 大型灰爪箱。`ChestVeryLargeName` = 奥术保险箱，那是仓库升级物品，不要拿来当场景箱子的名字。
 
-| 枚举名模式 | 本地化 key | 按名字推测的大小 |
+场景里摆出来的对象名把 prefab 和大小对上了：`Small DV Chest = LootChest_High`，`Large DV Chest` / `Big DV Chest = LootChest_ExtraHigh`。`LootChest` 在场景里叫 Crafting Material Chest，是木箱，不是小型灰爪箱。普通 `MediumChest` 没有灰爪箱这句中文。`ExtraHigh2` 是同一档的银色箱子，页面写成「大型灰爪箱 2」，避免被父表火箭坠毁盖掉名字。没有单独的中文 key。
+
+| 枚举名模式 | 场景对象 | 本地化 key |
 | --- | --- | --- |
-| `LootChest` | `SmallAshenclawChest` | 小型 |
-| `Medium`（不是 Ghost / Scrat） | `AshenclawChest` | 灰爪箱 |
-| `High` | `GreaterAshenclawChest` | 大型 |
-| `ExtraHigh` | `ChestVeryLargeName` | 奥术保险箱 |
+| `High` | Small DV Chest | `SmallAshenclawChest` |
+| `ExtraHigh` | Large / Big DV Chest | `GreaterAshenclawChest` |
 
-`ExtraHigh` 在 `High` 之前判断。Ghost / Scrat 的 Medium 走各自的宝箱名，不走灰爪箱。
+`ExtraHigh` 在 `High` 之前判断。这只金箱子的图标就是游戏里灰爪箱的外观，`look` 记成「灰爪箱」。Ghost / Scrat 的 Medium 走各自的宝箱名。
 
 地图上的搜刮点点击走 `data-loot`，打开对应搜刮点来源（`openLoot`）。同一个 `GreaterVoidPortalChestCraftingMatTable` 点会同时带上贵重表；标题若共享同一个「·」前缀，图钉只用前缀。
 

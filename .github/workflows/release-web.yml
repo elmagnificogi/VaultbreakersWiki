@@ -19,18 +19,30 @@ jobs:
       - name: Pack the viewable site
         run: |
           set -euo pipefail
-          mkdir -p site/data site/maps
+          rm -rf site
+          mkdir -p site/maps site/icons
           cp index.html site/index.html
-          cp README.md site/README.md
-          cp data/db.json site/data/db.json
-          cp -a icons site/icons
           cp maps/pinewood.png maps/refinery.png maps/dragonvault.png site/maps/
-          if [ -f EXTRACT.md ]; then cp EXTRACT.md site/EXTRACT.md; fi
-          python3 - <<'PY'
+          find icons -maxdepth 1 -type f -iname '*.png' -exec cp -t site/icons {} +
+          cat > site/README.md << 'EOF'
+          解压后用浏览器打开 index.html。
+
+          这个压缩包只有页面、图标和三张小地图。
+          EOF
+          python3 - << 'PY'
           import os
+          allowed_ext = {".html", ".md", ".png"}
+          bad = []
+          for root, dirs, files in os.walk("site"):
+              for name in files:
+                  path = os.path.join(root, name)
+                  ext = os.path.splitext(name)[1].lower()
+                  if ext not in allowed_ext:
+                      bad.append(path)
+          if bad:
+              raise SystemExit("refusing to pack: " + ", ".join(bad))
           required = [
               "site/index.html",
-              "site/data/db.json",
               "site/maps/pinewood.png",
               "site/maps/refinery.png",
               "site/maps/dragonvault.png",
@@ -42,6 +54,23 @@ jobs:
           print(f"packed icons {len(icons)}")
           PY
           (cd site && zip -qr ../Vaultbreakers-loot-wiki.zip .)
+          if unzip -l Vaultbreakers-loot-wiki.zip | grep -Ei '\.(js|cs|dll|exe)$|EXTRACT\.md|package\.json|dump\.cs|Il2Cpp|node_modules'; then
+            echo "zip contains files that are not part of the static site" >&2
+            exit 1
+          fi
+
+      - name: Point the release at the static site only
+        run: |
+          set -euo pipefail
+          index=$(mktemp)
+          export GIT_AUTHOR_NAME="$(git log -1 --format='%an')"
+          export GIT_AUTHOR_EMAIL="$(git log -1 --format='%ae')"
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          GIT_INDEX_FILE="$index" git --work-tree=site add --all
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          commit=$(git commit-tree "$tree" -m "静态网页")
+          git push origin "$commit:refs/tags/web-${GITHUB_SHA}"
 
       - name: Name the release
         id: rel
@@ -51,11 +80,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: web-${{ github.sha }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: web-${{ github.sha }}
           name: ${{ steps.rel.outputs.name }}
           make_latest: true
           fail_on_unmatched_files: true
           files: Vaultbreakers-loot-wiki.zip
           body: |
-            解压后双击 index.html 即可查看，不需要安装游戏。
-            压缩包只含页面、数据和三张小地图。
+            解压后用浏览器打开 index.html，不需要安装游戏。
+            压缩包只有页面、图标和三张小地图。

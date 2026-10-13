@@ -21,9 +21,9 @@ Steam 测试版《Vaultbreakers》的资料页。掉落表、怪物、搜刮点�
 
 ## 自动打包
 
-推送到 `main` 之后，GitHub Actions 会把可直接打开的页面打成 `Vaultbreakers-loot-wiki.zip`，挂到这次提交的 Release 上。标签是 `web-` 加上提交哈希。
+推送到 `main` 之后，GitHub Actions 会把可直接打开的页面打成 `Vaultbreakers-loot-wiki.zip`，挂到这次提交的 Release 上。标签是 `web-` 加上提交哈希。这个标签只含静态页面，不含仓库里的其他文件。
 
-压缩包里有 `index.html`、`data/db.json`、`icons/`、三张小地图和本说明。没有游戏本体、资源包或反编译结果。
+压缩包里只有 `index.html`、`icons/` 里的图片、三张小地图，以及一段打开说明。页面数据已经写在 `index.html` 里。解包脚本、`EXTRACT.md`、`data/db.json`、依赖清单和反编译工具都不会打进去。
 
 ## 重新生成
 
