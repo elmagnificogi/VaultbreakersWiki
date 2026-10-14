@@ -95,7 +95,18 @@
   .dps-copy:hover { border-color:var(--accent); color:var(--accent); }
   .dps input { min-width:0; width:100%; padding:6px 8px; }
   #dps-out { max-width:640px; margin-top:8px; }
-  #dps-out tr.best td { color:var(--good); font-weight:700; }
+  #dps-out tr.best td, #opt-out tr.best td { color:var(--good); font-weight:700; }
+  .opt-base, .opt-item, .opt-slot-head, .opt-actions { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+  .opt-slot { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0; max-width:980px; }
+  .opt-slot-name { font-weight:700; min-width:3em; }
+  .opt-buff { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin:8px 0; }
+  .dps .opt-buff-name { width:8em; }
+  .dps .opt-buff input[type="number"] { width:5.5em; }
+  .dps .opt-use { width:auto; }
+  .opt-item input[type="number"], .opt-base input { width:5.5em; }
+  .opt-btn { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); border-radius:8px; padding:6px 10px; font:inherit; }
+  .opt-btn:hover { border-color:var(--accent); color:var(--accent); }
+  #opt-out { max-width:980px; margin-top:8px; }
   #rules { display:none; }
   main.rules-mode { grid-template-columns: 1fr; }
   main.rules-mode aside, main.rules-mode #detail, main.rules-mode #dps { display:none; }
@@ -165,6 +176,23 @@
     </div>
     <table id="dps-out"></table>
     <p id="dps-note" class="muted"></p>
+    <h2 style="margin-top:28px">装备穷举</h2>
+    <p class="muted">部位是固定的。勾选你有的候选，页面会把勾中的组合算一遍。常驻的额外攻击、额外攻速一直算在里面。限时增益按覆盖时间加权，覆盖时间是持续秒数除以冷却秒数。下面是妮弭拉的例子：基础攻击 70、暴击率 5%、暴击伤害 175%、攻速 1，特性额外攻击 30、额外攻速 0.33。默认增益是额外攻击 50、额外攻速 0.5，持续 4 秒、冷却 9 秒，可以改成你测到的数字。暴击伤害 25 表示再加 25%。攻速 0.25 表示再快 25%。只覆盖基础攻击。</p>
+    <div class="opt-base">
+      <span>攻击</span><input id="opt-atk" type="number" value="70" step="any" />
+      <span>暴击率</span><input id="opt-crit" type="number" value="5" step="any" />
+      <span>暴击伤害</span><input id="opt-critd" type="number" value="175" step="any" />
+      <span>攻速</span><input id="opt-spd" type="number" value="1" step="any" />
+      <span>额外攻击</span><input id="opt-extra-atk" type="number" value="30" step="any" />
+      <span>额外攻速</span><input id="opt-extra-spd" type="number" value="0.33" step="any" />
+    </div>
+    <div id="opt-buffs"></div>
+    <div class="opt-actions">
+      <button type="button" class="opt-btn" id="opt-add-buff">添加增益</button>
+    </div>
+    <div id="opt-slots"></div>
+    <p id="opt-note" class="muted"></p>
+    <table id="opt-out"></table>
   </section>
   <section id="rules" class="rules">
     <h2>难度与多人</h2>
@@ -297,7 +325,174 @@ const db = JSON.parse(document.getElementById("db").textContent);
       note.textContent = "第 " + (winners[0] + 1) + " 套的相对每秒伤害最高" + (others.length ? "，比" + others.join("，比") : "") + "。";
     }
   }
-  document.getElementById("dps").addEventListener("input", renderDps);
+  function optNum(el) {
+    if (!el || String(el.value).trim() === "") return 0;
+    const n = Number(el.value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function optVal(n) {
+    return n ? String(n) : "";
+  }
+  function optItemHtml(item) {
+    const row = item || { name: "", atk: 0, crit: 0, cd: 0, as: 0 };
+    return '<div class="opt-item"><input class="opt-use" type="checkbox" checked><input class="opt-item-name" value="' + String(row.name || "").replace(/"/g, "") + '">' +
+      '<input class="opt-item-atk" type="number" step="any" placeholder="攻击" value="' + optVal(row.atk) + '">' +
+      '<input class="opt-item-crit" type="number" step="any" placeholder="暴击率" value="' + optVal(row.crit) + '">' +
+      '<input class="opt-item-cd" type="number" step="any" placeholder="爆伤" value="' + optVal(row.cd) + '">' +
+      '<input class="opt-item-as" type="number" step="any" placeholder="攻速" value="' + optVal(row.as) + '">' +
+      '<button type="button" class="opt-btn opt-del-item">删除</button></div>';
+  }
+  function optBuffHtml(buff) {
+    const row = buff || { name: "", atk: 0, as: 0, dur: 0, cd: 0 };
+    return '<div class="opt-buff"><input class="opt-buff-name" placeholder="增益名称" value="' + String(row.name || "").replace(/"/g, "") + '"><span>额外攻击</span><input class="opt-buff-atk" type="number" step="any" value="' + optVal(row.atk) + '"><span>额外攻速</span><input class="opt-buff-as" type="number" step="any" value="' + optVal(row.as) + '"><span>持续秒</span><input class="opt-buff-dur" type="number" step="any" value="' + optVal(row.dur) + '"><span>冷却秒</span><input class="opt-buff-cd" type="number" step="any" value="' + optVal(row.cd) + '"><button type="button" class="opt-btn opt-del-buff">删除</button></div>';
+  }
+  function addOptBuff(buff) {
+    const box = document.createElement("div");
+    box.innerHTML = optBuffHtml(buff);
+    document.getElementById("opt-buffs").appendChild(box.firstChild);
+  }
+  function addOptSlot(slot) {
+    const box = document.createElement("div");
+    box.className = "opt-slot";
+    const items = (slot.items || []).map(optItemHtml).join("");
+    box.innerHTML = '<div class="opt-slot-head"><b class="opt-slot-name">' + slot.slot + '</b><button type="button" class="opt-btn opt-add-item">添加候选</button></div>' + items;
+    document.getElementById("opt-slots").appendChild(box);
+  }
+  function optItemLabel(item, index) {
+    if (item.name) return item.name;
+    const bits = [];
+    if (item.atk) bits.push(item.atk + "攻击");
+    if (item.crit) bits.push(item.crit + "%暴击");
+    if (item.cd) bits.push(item.cd + "%爆伤");
+    if (item.as) bits.push(Math.round(item.as * 1000) / 10 + "%攻速");
+    return bits.join(" ") || ("候选" + (index + 1));
+  }
+  function optFmt(n) {
+    return (Math.round(n * 100) / 100).toString();
+  }
+  function renderOpt() {
+    const baseAtk = optNum(document.getElementById("opt-atk"));
+    const baseCrit = optNum(document.getElementById("opt-crit"));
+    const baseCd = optNum(document.getElementById("opt-critd"));
+    const baseSpd = optNum(document.getElementById("opt-spd"));
+    const extraAtk = optNum(document.getElementById("opt-extra-atk"));
+    const extraSpd = optNum(document.getElementById("opt-extra-spd"));
+    const buffs = [];
+    let buffIgnored = 0;
+    document.querySelectorAll("#opt-buffs .opt-buff").forEach(function (row) {
+      const buff = {
+        name: (row.querySelector(".opt-buff-name").value || "增益").trim() || "增益",
+        atk: optNum(row.querySelector(".opt-buff-atk")),
+        as: optNum(row.querySelector(".opt-buff-as")),
+        dur: optNum(row.querySelector(".opt-buff-dur")),
+        cd: optNum(row.querySelector(".opt-buff-cd"))
+      };
+      if (!buff.atk && !buff.as) return;
+      if (!(buff.dur > 0 && buff.cd > 0)) { buffIgnored += 1; return; }
+      buff.u = Math.min(1, buff.dur / buff.cd);
+      buffs.push(buff);
+    });
+    const slots = [];
+    document.querySelectorAll("#opt-slots .opt-slot").forEach(function (slotEl) {
+      const slotName = (slotEl.querySelector(".opt-slot-name").textContent || "部位").trim();
+      const items = [];
+      slotEl.querySelectorAll(".opt-item").forEach(function (row, index) {
+        const use = row.querySelector(".opt-use");
+        if (use && !use.checked) return;
+        const item = {
+          name: (row.querySelector(".opt-item-name").value || "").trim(),
+          atk: optNum(row.querySelector(".opt-item-atk")),
+          crit: optNum(row.querySelector(".opt-item-crit")),
+          cd: optNum(row.querySelector(".opt-item-cd")),
+          as: optNum(row.querySelector(".opt-item-as"))
+        };
+        if (!item.name && !item.atk && !item.crit && !item.cd && !item.as) return;
+        item.label = slotName + " " + optItemLabel(item, index);
+        items.push(item);
+      });
+      if (items.length) slots.push(items);
+    });
+    let combos = [{ atk: 0, crit: 0, cd: 0, as: 0, picks: [] }];
+    let capped = false;
+    slots.forEach(function (items) {
+      if (capped) return;
+      const next = [];
+      combos.forEach(function (combo) {
+        items.forEach(function (item) {
+          if (next.length > 200000) return;
+          next.push({
+            atk: combo.atk + item.atk,
+            crit: combo.crit + item.crit,
+            cd: combo.cd + item.cd,
+            as: combo.as + item.as,
+            picks: combo.picks.concat(item.label)
+          });
+        });
+      });
+      if (next.length > 200000) capped = true;
+      else combos = next;
+    });
+    const ranked = combos.map(function (combo) {
+      const crit = baseCrit + combo.crit;
+      const cd = baseCd + combo.cd;
+      const chance = Math.min(100, Math.max(0, crit)) / 100;
+      const mult = cd / 100;
+      const states = 1 << buffs.length;
+      let weighted = 0;
+      let calm = 0;
+      let hot = 0;
+      for (let mask = 0; mask < states; mask++) {
+        let atk = baseAtk + extraAtk + combo.atk;
+        let as = baseSpd + extraSpd + combo.as;
+        let p = 1;
+        for (let i = 0; i < buffs.length; i++) {
+          if (mask & (1 << i)) { atk += buffs[i].atk; as += buffs[i].as; p *= buffs[i].u; }
+          else p *= 1 - buffs[i].u;
+        }
+        as = Math.max(0, as);
+        const dps = atk * (1 - chance + chance * mult) * as;
+        weighted += p * dps;
+        if (mask === 0) calm = dps;
+        if (mask === states - 1) hot = dps;
+      }
+      return { crit: crit, cd: cd, calm: calm, hot: hot, dps: weighted, picks: combo.picks };
+    }).sort(function (a, b) { return b.dps - a.dps; });
+    const best = ranked[0];
+    const shown = ranked.slice(0, 8);
+    const note = document.getElementById("opt-note");
+    if (!best) note.textContent = "";
+    else {
+      const cover = buffs.map(function (buff) { return buff.name + " 覆盖 " + optFmt(buff.u * 100) + "%（持续 " + optFmt(buff.dur) + " 秒，冷却 " + optFmt(buff.cd) + " 秒）"; }).join("；");
+      note.textContent = "算了 " + ranked.length + " 种搭配。" + (capped ? "再往后组合超过 20 万，没有继续算。" : "") + (cover ? cover + "。" : "") + (buffIgnored ? "有增益没填持续和冷却，没有计入。" : "") + "加权每秒伤害 " + optFmt(best.dps) + "。平时 " + optFmt(best.calm) + "，增益全开 " + optFmt(best.hot) + "。暴击率 " + optFmt(best.crit) + "%，暴击伤害 " + optFmt(best.cd) + "%。";
+    }
+    document.getElementById("opt-out").innerHTML = "<thead><tr><th></th><th>搭配</th><th>暴击率</th><th>暴击伤害</th><th>平时每秒</th><th>增益全开</th><th>加权每秒</th><th>对比最高</th></tr></thead><tbody>" + shown.map(function (row, i) {
+      const pct = best && best.dps ? Math.round(row.dps / best.dps * 1000) / 10 : "";
+      return "<tr" + (i === 0 ? " class='best'" : "") + "><td>第 " + (i + 1) + " 套</td><td>" + (row.picks.map(function (text) { return String(text).replace(/[&<>]/g, function (ch) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]; }); }).join("、") || "只算基础") + "</td><td>" + optFmt(row.crit) + "%</td><td>" + optFmt(row.cd) + "%</td><td>" + optFmt(row.calm) + "</td><td>" + optFmt(row.hot) + "</td><td>" + optFmt(row.dps) + "</td><td>" + pct + "%</td></tr>";
+    }).join("") + "</tbody>";
+  }
+  document.getElementById("dps").addEventListener("input", function () { renderDps(); renderOpt(); });
+  document.getElementById("dps").addEventListener("change", renderOpt);
+  document.getElementById("dps").addEventListener("click", function (ev) {
+    const addItem = ev.target.closest(".opt-add-item");
+    if (addItem) { addItem.closest(".opt-slot").insertAdjacentHTML("beforeend", optItemHtml()); renderOpt(); return; }
+    const delItem = ev.target.closest(".opt-del-item");
+    if (delItem) { delItem.closest(".opt-item").remove(); renderOpt(); return; }
+    if (ev.target.id === "opt-add-buff") { addOptBuff(); renderOpt(); return; }
+    const delBuff = ev.target.closest(".opt-del-buff");
+    if (delBuff) { delBuff.closest(".opt-buff").remove(); renderOpt(); }
+  });
+  [
+    { slot: "饰品", items: [{ name: "6攻击 5%爆伤", atk: 6, cd: 5 }] },
+    { slot: "护符", items: [{ name: "10%爆伤", cd: 10 }] },
+    { slot: "武器", items: [{ name: "6攻击", atk: 6 }, { name: "6%暴击", crit: 6 }] },
+    { slot: "护胸", items: [{ name: "25%攻速", as: 0.25 }, { name: "10%攻速 15攻击", atk: 15, as: 0.1 }, { name: "10%攻速 8%暴击", crit: 8, as: 0.1 }, { name: "17攻击", atk: 17 }] },
+    { slot: "腿甲", items: [{ name: "6攻击 5%爆伤", atk: 6, cd: 5 }, { name: "25%爆伤", cd: 25 }, { name: "8%暴击", crit: 8 }, { name: "6攻击", atk: 6 }] },
+    { slot: "头盔", items: [{ name: "7攻击", atk: 7 }, { name: "8%暴击", crit: 8 }, { name: "9攻击", atk: 9 }] },
+    { slot: "项链", items: [{ name: "13%攻速 7%暴击", crit: 7, as: 0.13 }] },
+    { slot: "手指", items: [{ name: "6攻击 2%攻速", atk: 6, as: 0.02 }, { name: "8%暴击", crit: 8 }, { name: "7攻击", atk: 7 }] },
+    { slot: "双手", items: [{ name: "11%暴击 7%攻速", crit: 11, as: 0.07 }] }
+  ].forEach(addOptSlot);
+  addOptBuff({ name: "技能增伤", atk: 50, as: 0.5, dur: 4, cd: 9 });
   document.getElementById("dps").addEventListener("click", function (ev) {
     const btn = ev.target.closest(".dps-copy");
     if (!btn) return;
@@ -312,6 +507,7 @@ const db = JSON.parse(document.getElementById("db").textContent);
     renderDps();
   });
   renderDps();
+  renderOpt();
 })();
 const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
