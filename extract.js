@@ -5,6 +5,7 @@ const { parseUnityFS, extractNode } = require("./unityfs");
 const { parseSerialized, readObject } = require("./serialized");
 const { decodeTexture } = require("./dxt");
 const { extractGameMaps } = require("./maps");
+const { collectCodex } = require("./codex");
 const { fillCreaturePortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
@@ -1277,6 +1278,25 @@ function main() {
     };
   });
 
+  console.log("reading characters, skills, gear");
+  const codex = collectCodex(sf, readObject, {
+    asString,
+    walk,
+    byKey,
+    textIds,
+    chinese,
+    abilities: parseEnum(dump, "AbilityType"),
+    classes: parseEnum(dump, "CharacterClass"),
+    stats: parseEnum(dump, "StatType"),
+    specials: parseEnum(dump, "LoadoutSpecialStatType"),
+    iconFor,
+    search,
+    itemById,
+    rarityNames: RARITY,
+    displayText,
+  });
+  console.log("characters", codex.characters.length, "skills", codex.skills.length, "gear", codex.gear.length);
+
   const usedIcons = new Set();
   for (const table of dropTables) for (const e of table.entries) if (e.itemIcon) usedIcons.add(e.itemIcon);
   for (const source of sources) if (source.icon) usedIcons.add(source.icon);
@@ -1287,6 +1307,10 @@ function main() {
     dropTables: dropTables.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
     sources: sources.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
     items: itemList.filter((it) => it.icon || dropTables.some((t) => t.entries.some((e) => e.item === it.id))).sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
+    characters: codex.characters,
+    skills: codex.skills,
+    gear: codex.gear,
+    labels: codex.labels,
     maps: gameMaps,
     rarity: RARITY,
     dropMode: DROP_MODE,
@@ -1308,8 +1332,13 @@ function writeHtml(db) {
 <style>
   :root { color-scheme: dark; --bg:#12141a; --panel:#1c2030; --line:#31384d; --text:#e7ebf5; --muted:#9aa3b8; --accent:#e2b15a; --good:#7dcea0; }
   * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--text); }
-  header { padding:18px 22px 10px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
+  html, body { height:100%; }
+  html { overflow:hidden; }
+  body { margin:0; height:100vh; overflow:hidden; display:flex; flex-direction:column; font:15px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:18px 22px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:flex-end; }
+  #cat { width:14em; }
+  #cat[hidden] { display:inline-block; visibility:hidden; pointer-events:none; }
   h1 { margin:0; font-size:22px; }
   header p { margin:4px 0 0; color:var(--muted); }
   header .meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -1319,13 +1348,14 @@ function writeHtml(db) {
   input, select { background:#0e1118; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   input { min-width:260px; }
   .search { position:relative; }
+  .search[hidden] { display:block; visibility:hidden; pointer-events:none; }
   .search-history { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 4px); background:#1c2030; border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
   .search-history[hidden] { display:none; }
   .search-history p { margin:4px 8px; color:var(--muted); font-size:12px; }
   .search-history button { display:block; width:100%; text-align:left; background:transparent; color:inherit; border:0; border-radius:6px; padding:7px 8px; cursor:pointer; font:inherit; }
   .search-history button:hover { background:#262c3e; }
-  main { display:grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 78px); }
-  aside { border-right:1px solid var(--line); overflow:auto; max-height: calc(100vh - 78px); }
+  main { flex:1 1 auto; min-height:0; display:grid; grid-template-columns: 340px 1fr; grid-template-rows: minmax(0, 1fr); }
+  aside { border-right:1px solid var(--line); overflow:auto; min-height:0; overflow-anchor:none; }
   .list-count { margin:0; padding:10px 12px 18px; color:var(--muted); font-size:12px; }
   .row { display:flex; gap:10px; align-items:center; width:100%; text-align:left; background:transparent; color:inherit; border:0; border-bottom:1px solid #262b3c; padding:8px 12px; cursor:pointer; }
   .row:hover, .row.active { background:#262c3e; }
@@ -1333,7 +1363,7 @@ function writeHtml(db) {
   .hero img { width:84px; height:84px; }
   .hero img { width:84px; height:84px; }
   .row small, .muted { color:var(--muted); }
-  section { padding:18px 22px 40px; overflow:auto; max-height: calc(100vh - 78px); }
+  section { padding:18px 22px 40px; overflow:auto; min-height:0; overflow-anchor:none; }
   .hero { display:flex; gap:14px; align-items:center; margin-bottom:14px; }
   table { width:100%; border-collapse:collapse; }
   th, td { border-bottom:1px solid var(--line); padding:8px 6px; vertical-align:middle; text-align:left; }
@@ -1341,6 +1371,7 @@ function writeHtml(db) {
   .bar { height:8px; background:#2a3144; border-radius:99px; overflow:hidden; min-width:70px; }
   .bar span { display:block; height:100%; background:var(--accent); }
   .tag { display:inline-block; margin:0 4px 4px 0; padding:2px 6px; border-radius:99px; background:#2a3144; color:var(--muted); font-size:12px; }
+  .tabs { display:flex; flex-wrap:wrap; flex:1 0 100%; }
   .tabs button { background:transparent; color:var(--muted); border:0; border-bottom:2px solid transparent; padding:8px 12px; cursor:pointer; }
   .tabs button.on { color:var(--accent); border-color:var(--accent); }
   a { color:#8eb6ff; cursor:pointer; }
@@ -1374,34 +1405,239 @@ function writeHtml(db) {
   .region-filter, .pin-filter, .gate-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
   .region-filter.on, .pin-filter.on, .gate-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } aside, section { max-height:none; } }
+  .dps h2 { margin:0 0 8px; font-size:20px; }
+  main.dps-mode { grid-template-columns: 1fr; }
+  main.dps-mode aside, main.dps-mode #detail { display: none; }
+  #dps { display: none; }
+  main.dps-mode #dps { display: block; overflow: auto; }
+  .dps p { margin:6px 0 8px; }
+  .dps-sets { display:flex; flex-wrap:wrap; gap:18px 28px; }
+  .dps-set { display:grid; grid-template-columns:5.5em 7.5em; gap:6px 8px; align-items:center; }
+  .dps-head { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .dps-apply { display:flex; align-items:center; gap:6px; }
+  .dps-apply select { min-width:0; width:auto; padding:2px 4px; font:inherit; font-size:12px; }
+  .dps-copy { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); border-radius:8px; padding:2px 8px; font:inherit; font-size:12px; }
+  .dps-copy:hover { border-color:var(--accent); color:var(--accent); }
+  .dps input { min-width:0; width:100%; padding:6px 8px; }
+  #dps-out { max-width:640px; margin-top:8px; }
+  #dps-out tr.best td { color:var(--good); font-weight:700; }
+  #rules { display:none; }
+  main.rules-mode { grid-template-columns: 1fr; }
+  main.rules-mode aside, main.rules-mode #detail, main.rules-mode #dps { display:none; }
+  main.rules-mode #rules { display:block; overflow:auto; }
+  .rules h2 { margin:22px 0 8px; font-size:20px; }
+  .rules h2:first-child { margin-top:0; }
+  .rules p, .rules li { max-width:920px; }
+  .rules p { margin:6px 0 8px; }
+  .rules table { max-width:920px; margin:8px 0 14px; }
+  .rules td { vertical-align:top; }
+  @media (max-width: 860px) { html { overflow:auto; } body { height:auto; overflow:auto; display:block; } main { display:block; } aside, section { overflow:visible; } }
 </style>
 </head>
 <body>
 <header>
   <div>
     <h1>龙窟破坏者掉落表</h1>
-    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张。</p>
+    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件。</p>
     <p class="meta">作者 elmagnifico · 版本 v0.1 · 对应游戏版本 2.0.2137.110314（Steam build 25803617） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
-  <div class="search">
-    <input id="q" placeholder="搜索怪物、箱子、物品" autocomplete="off" />
-    <div id="history" class="search-history" hidden></div>
-  </div>
-  <select id="cat"></select>
-  <div class="tabs">
-    <button id="tab-sources" class="on">怪物与搜刮点</button>
-    <button id="tab-items">物品</button>
-    <button id="tab-maps">地图</button>
+  <div class="toolbar">
+    <div class="search">
+      <input id="q" placeholder="搜索怪物、箱子、物品、角色、技能、装备" autocomplete="off" />
+      <div id="history" class="search-history" hidden></div>
+    </div>
+    <select id="cat"></select>
+    <div class="tabs">
+      <button id="tab-sources" class="on">怪物与搜刮点</button>
+      <button id="tab-characters">角色</button>
+      <button id="tab-skills">技能</button>
+      <button id="tab-gear">装备</button>
+      <button id="tab-items">物品</button>
+      <button id="tab-maps">地图</button>
+      <button id="tab-rules">难度与多人</button>
+      <button id="tab-dps">速算</button>
+    </div>
   </div>
 </header>
 <main>
   <aside id="list"></aside>
   <section id="detail"></section>
+  <section id="dps" class="dps">
+    <h2>基础攻击速算</h2>
+    <p class="muted">填面板上的数字，最多对比 3 套。暴击伤害 215 表示暴击打出 2.15 倍。攻击速度 1 是正常出手，2 表示基础攻击次数翻倍，留空按 1 算。相对每秒按同一把武器的基础攻速比较，只覆盖基础攻击。</p>
+    <div class="dps-sets">
+      <div class="dps-set">
+        <div class="dps-head"><b>第 1 套</b><span class="dps-apply"><select class="dps-from"><option value="1">第 2 套</option><option value="2">第 3 套</option></select><button type="button" class="dps-copy" data-to="0">套用</button></span></div>
+        <span>攻击伤害</span><input id="dps-0-atk" type="number" value="88" step="any" />
+        <span>暴击率</span><input id="dps-0-crit" type="number" value="28" step="any" />
+        <span>暴击伤害</span><input id="dps-0-critd" type="number" value="215" step="any" />
+        <span>攻击速度</span><input id="dps-0-spd" type="number" value="1" step="any" />
+      </div>
+      <div class="dps-set">
+        <div class="dps-head"><b>第 2 套</b><span class="dps-apply"><select class="dps-from"><option value="0">第 1 套</option><option value="2">第 3 套</option></select><button type="button" class="dps-copy" data-to="1">套用</button></span></div>
+        <span>攻击伤害</span><input id="dps-1-atk" type="number" value="81" step="any" />
+        <span>暴击率</span><input id="dps-1-crit" type="number" value="33" step="any" />
+        <span>暴击伤害</span><input id="dps-1-critd" type="number" value="215" step="any" />
+        <span>攻击速度</span><input id="dps-1-spd" type="number" value="1" step="any" />
+      </div>
+      <div class="dps-set">
+        <div class="dps-head"><b>第 3 套</b><span class="dps-apply"><select class="dps-from"><option value="0">第 1 套</option><option value="1">第 2 套</option></select><button type="button" class="dps-copy" data-to="2">套用</button></span></div>
+        <span>攻击伤害</span><input id="dps-2-atk" type="number" step="any" />
+        <span>暴击率</span><input id="dps-2-crit" type="number" step="any" />
+        <span>暴击伤害</span><input id="dps-2-critd" type="number" step="any" />
+        <span>攻击速度</span><input id="dps-2-spd" type="number" placeholder="1" step="any" />
+      </div>
+    </div>
+    <table id="dps-out"></table>
+    <p id="dps-note" class="muted"></p>
+  </section>
+  <section id="rules" class="rules">
+    <h2>难度与多人</h2>
+    <p>进图之后看两件事：你选的是冒险、核心还是破阵者，以及你是单排、双排还是三排。这两件事分开算。</p>
+    <p>冒险、核心、破阵者不改变怪物原来的血量和伤害，也不会让它们更爱追人。人数也不会让所有怪一起变强。双排和三排里，只有一部分怪会变成精英或噩梦。</p>
+
+    <h2>冒险、核心、破阵者</h2>
+    <p>在庇护所切换。变的是你的收益、从哪出生，以及箱子里能开出什么。</p>
+    <table>
+      <thead>
+        <tr><th></th><th>冒险</th><th>核心</th><th>破阵者</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>怪物</td>
+          <td>血量、伤害都不变</td>
+          <td>血量、伤害都不变</td>
+          <td>血量、伤害都不变</td>
+        </tr>
+        <tr>
+          <td>你自己</td>
+          <td>护甲和魔法抗性 +100。出发点有安全撤离。从固定地点出生。</td>
+          <td>经验是原来的 2 倍。从固定地点出生。</td>
+          <td>经验是原来的 3 倍。随机出生，任务里会遇到其他玩家。</td>
+        </tr>
+        <tr>
+          <td>箱子里的品质</td>
+          <td>不会开出卓越和传奇。稀有可以。</td>
+          <td>同样不会开出卓越和传奇。</td>
+          <td>可以开出卓越和传奇。</td>
+        </tr>
+        <tr>
+          <td>箱子里的金币</td>
+          <td>数量减半</td>
+          <td>数量不变</td>
+          <td>数量变为 3 倍</td>
+        </tr>
+        <tr>
+          <td>箱子里的基础材料</td>
+          <td>数量不变</td>
+          <td>数量不变</td>
+          <td>数量变为 2 倍</td>
+        </tr>
+        <tr>
+          <td>死亡</td>
+          <td colspan="2">有 25% 的几率损坏装备。身上装备评分低于 8，至少坏 1 件；达到 8，至少坏 2 件。</td>
+          <td>身上穿的装备全部掉落，并且永久丢失。</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>游戏里有的提示把卓越叫成史诗。看物品品质时，稀有还能开到；冒险和核心开不出卓越和传奇，破阵者可以。核心的提示写着全队都选核心就能找到这些，这版实际开箱仍然开不出。</p>
+    <p>如果一件东西本来就定好了是卓越或传奇，冒险和核心也还能拿到。受限制的是箱子临时决定品质的那些物品。怪物掉出来再开的箱子也一样。</p>
+    <p>举例：一个箱子本来会给你 40 个金币，旁边还有机会掉一把武器。冒险你拿到 20 个金币，核心拿到 40 个，破阵者拿到 120 个。那把武器出不出，三种难度一样。破阵者如果开到基础材料，个数是原来的 2 倍，也不是更容易开到。</p>
+    <p>庇护所里另有一项「敌人难度」。它按你看到的百分比，同时提高敌人的生命和伤害，奖励还是按原来的阶层算。它和冒险、核心、破阵者不是一回事。</p>
+
+    <h2>双排和三排</h2>
+    <p>有的怪自带一个标记：低、中、高，或者 Boss。没有标记的怪一直是普通怪。这个标记做这只怪的时候就定了，不是它的等级，也跟你选冒险还是核心无关。</p>
+    <p>单排里，这些怪都还是普通的。教学关里也不会变。双排和三排里，每只带标记的怪各自有机会变成精英或噩梦。下面是一只怪自己的概率，不是地图上会多刷几只。</p>
+    <table>
+      <thead>
+        <tr><th>这只怪的标记</th><th>单排</th><th>双排</th><th>三排</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>低</td><td>普通</td><td>精英 85%，普通 15%</td><td>噩梦 50%，精英 45%，普通 5%</td></tr>
+        <tr><td>中</td><td>普通</td><td>精英 50%，噩梦 20%，普通 30%</td><td>噩梦 70%，精英 30%</td></tr>
+        <tr><td>高</td><td>普通</td><td>噩梦 70%，精英 30%</td><td>全部是噩梦</td></tr>
+        <tr><td>Boss</td><td>普通</td><td>全部是精英</td><td>全部是噩梦</td></tr>
+      </tbody>
+    </table>
+    <p>变成之后，用的是它自己原来的数值：</p>
+    <table>
+      <thead>
+        <tr><th></th><th>血量</th><th>伤害</th><th>跑速</th><th>其他</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>精英</td><td>2 倍</td><td>1.2 倍</td><td>1.2 倍</td><td></td></tr>
+        <tr><td>噩梦</td><td>3 倍</td><td>1.4 倍</td><td>1.4 倍</td><td>连续晕它会越来越难</td></tr>
+      </tbody>
+    </table>
+    <p>同一只怪只会变成其中一种，不会先变精英再叠成噩梦。没变成的普通怪，单排、双排、三排的血量一样。带 Boss 标记的怪没有另一套加成，双排就是上表的精英，三排就是上表的噩梦。</p>
+    <p>举例：假如一只狼的标记是「低」。单排它就是普通狼。双排大约 85% 变成精英，血量和伤害按上表变高，剩下 15% 还是普通狼。三排大约一半变成噩梦，45% 变成精英，只有 5% 还是普通狼。头狼是另一只怪，不是这只狼变出来的。</p>
+    <p>所以双排时，你会觉得一部分敌人比单排更强，也可能遇到单排或双排的玩家。三排时，更多敌人比单排、双排更强，也可能遇到单排、双排或三排的玩家。</p>
+    <p>人数不会让整张地图的怪物按一个倍数变多。金库是单人、双人、三人各一套布置。撤离时，附近如果还有别的玩家，会多刷一些，那只影响这次撤离，不是全图的怪都变多。</p>
+  </section>
 </main>
 <script id="db" type="application/json">${JSON.stringify(db).replace(/</g, "\\u003c")}</script>
 <script>
 const db = JSON.parse(document.getElementById("db").textContent);
+(function () {
+  function num(id) {
+    const el = document.getElementById(id);
+    if (!el || String(el.value).trim() === "") return null;
+    const n = Number(el.value);
+    return Number.isFinite(n) ? n : null;
+  }
+  function build(i) {
+    const atk = num("dps-" + i + "-atk");
+    if (atk == null) return null;
+    const crit = num("dps-" + i + "-crit");
+    const critd = num("dps-" + i + "-critd");
+    const spd = num("dps-" + i + "-spd");
+    const chance = Math.min(100, Math.max(0, crit == null ? 0 : crit)) / 100;
+    const mult = (critd == null ? 100 : critd) / 100;
+    const rate = Math.max(0, spd == null ? 1 : spd);
+    const hit = atk * (1 - chance + chance * mult);
+    return { hit: hit, critHit: atk * mult, dps: hit * rate };
+  }
+  function fmt(n) {
+    return (Math.round(n * 10) / 10).toString();
+  }
+  function renderDps() {
+    const rows = [0, 1, 2].map(build);
+    let best = null;
+    rows.forEach(row => { if (row && (best == null || row.dps > best)) best = row.dps; });
+    const first = rows[0];
+    const body = rows.map((row, i) => {
+      if (!row) return "";
+      const pct = first && first.dps ? Math.round(row.dps / first.dps * 1000) / 10 : "";
+      const mark = best != null && row.dps === best ? " class='best'" : "";
+      return "<tr" + mark + "><td>第 " + (i + 1) + " 套</td><td>" + fmt(row.hit) + "</td><td>" + fmt(row.critHit) + "</td><td>" + fmt(row.dps) + "</td><td>" + (pct === "" ? "" : pct + "%") + "</td></tr>";
+    }).join("");
+    document.getElementById("dps-out").innerHTML = "<thead><tr><th></th><th>单次期望</th><th>暴击一下</th><th>相对每秒</th><th>对比第 1 套</th></tr></thead><tbody>" + body + "</tbody>";
+    const filled = rows.map((row, i) => row ? i : -1).filter(i => i >= 0);
+    const winners = filled.filter(i => rows[i].dps === best);
+    const note = document.getElementById("dps-note");
+    if (!winners.length) note.textContent = "";
+    else if (winners.length > 1) note.textContent = winners.map(i => "第 " + (i + 1) + " 套").join("、") + " 的相对每秒伤害相同。";
+    else {
+      const others = filled.filter(i => i !== winners[0] && rows[i].dps > 0).map(i => "第 " + (i + 1) + " 套高 " + fmt((rows[winners[0]].dps / rows[i].dps - 1) * 100) + "%");
+      note.textContent = "第 " + (winners[0] + 1) + " 套的相对每秒伤害最高" + (others.length ? "，比" + others.join("，比") : "") + "。";
+    }
+  }
+  document.getElementById("dps").addEventListener("input", renderDps);
+  document.getElementById("dps").addEventListener("click", function (ev) {
+    const btn = ev.target.closest(".dps-copy");
+    if (!btn) return;
+    const to = btn.getAttribute("data-to");
+    const pick = btn.parentNode.querySelector(".dps-from");
+    const from = pick ? pick.value : "0";
+    ["atk", "crit", "critd", "spd"].forEach(function (key) {
+      const src = document.getElementById("dps-" + from + "-" + key);
+      const dst = document.getElementById("dps-" + to + "-" + key);
+      if (src && dst) dst.value = src.value;
+    });
+    renderDps();
+  });
+  renderDps();
+})();
 const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
 const qEl = document.getElementById("q");
@@ -1412,7 +1648,8 @@ let current = null;
 let historyLock = false;
 let appliedUrl = "";
 let mapObserver = null;
-const lastByMode = { tables: null, sources: null, items: null, maps: null };
+const lastByMode = { tables: null, sources: null, items: null, maps: null, characters: null, skills: null, gear: null };
+const listScroll = {};
 function icon(src, alt) {
   if (!src) return '<img class="icon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">';
   return '<img class="icon" alt="'+(alt||"")+'" src="'+src+'">';
@@ -1525,7 +1762,7 @@ function rarityText(entry) {
   return entry.rarities.map((v,i) => v ? (db.rarity[i]||("稀有度"+i)) + " " + (v/sum*100).toFixed(0) + "%" : "").filter(Boolean).join(" · ");
 }
 function categoriesFor(kind) {
-  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : [];
+  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : [];
   return ["全部", ...[...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh"))];
 }
 function syncCats(preferred) {
@@ -1564,6 +1801,9 @@ function filtered() {
   });
   else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
   else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
+  else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
   else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
@@ -1587,7 +1827,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : ((row.places||[]).join("、"));
+    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? (row.role || row.origin || "") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : ((row.places||[]).join("、"));
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -1641,11 +1881,17 @@ function openSource(key) {
   const source = rowByKey(raw);
   if (source) show("sources", source);
 }
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
+}
 function bindJumps(root) {
   root.querySelectorAll("[data-jump]").forEach(a => a.onclick = (event) => { event.preventDefault(); openTable(a.dataset.jump); });
   root.querySelectorAll("[data-item]").forEach(a => a.onclick = (event) => { event.preventDefault(); openItem(a.dataset.item); });
   root.querySelectorAll("[data-loot]").forEach(a => a.onclick = (event) => { event.preventDefault(); openLoot(a.dataset.loot); });
   root.querySelectorAll("[data-source]").forEach(a => a.onclick = (event) => { event.preventDefault(); openSource(a.dataset.source); });
+  root.querySelectorAll("[data-skill]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.skills || []).find(s => s.name === a.dataset.skill); if (row) show("skills", row); });
+  root.querySelectorAll("[data-character]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.characters || []).find(c => c.id === a.dataset.character); if (row) show("characters", row); });
+  root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
 }
 function open(row) {
   current = row;
@@ -1703,6 +1949,61 @@ function open(row) {
       + '<table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
       + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
       + '</tbody></table>';
+    bindJumps(detailEl);
+  } else if (mode === "characters") {
+    const labels = db.labels || {};
+    const skillLink = (skill) => skill ? '<a data-skill="'+esc(skill.id)+'">'+esc(skill.title)+'</a>' : "";
+    const perkRows = (row.perks || []).map(perk => {
+      const item = perk.item && (db.items || []).find(it => String(it.id) === String(perk.item));
+      const itemCell = item ? '<a data-item="'+esc(item.id)+'">'+esc(perk.itemTitle || item.title)+'</a>' : esc(perk.itemTitle || "");
+      return '<tr><td>'+skillLink(perk)+'</td><td>'+esc(perk.level)+'</td><td>'+itemCell+'</td></tr>';
+    }).join("");
+    const statRows = (row.stats || []).map(stat => '<tr><td>'+esc(stat.label)+'</td><td>'+esc(stat.value)+'</td></tr>').join("");
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+esc(row.title)+'</h2><div class="muted">'+esc([row.origin, row.role].filter(Boolean).join(" · "))+'</div>'+(row.locked ? '<p>'+esc(row.locked)+'</p>' : '')+'</div></div>'
+      + (row.description ? '<p>'+esc(row.description)+'</p>' : '')
+      + (row.strengths || row.weaknesses ? '<p>'+[row.strengths, row.weaknesses].filter(Boolean).map(esc).join("<br>")+'</p>' : '')
+      + (row.originDescription ? '<p>'+esc(row.originDescription)+'</p>' : '')
+      + (row.quote ? '<p class="muted">'+esc(row.quote)+'</p>' : '')
+      + (row.energy ? '<p>'+esc(row.energy)+'</p>' : '')
+      + (statRows ? '<table><tbody>'+statRows+'</tbody></table>' : '')
+      + (row.basicSkill ? '<h3>'+skillLink(row.basicSkill)+'</h3>' : '')
+      + ((row.activeSkills || []).length ? '<p>'+(row.activeSkills || []).map(skillLink).join("、")+'</p>' : '')
+      + ((row.passiveSkills || []).length ? '<p>'+(row.passiveSkills || []).map(skillLink).join("、")+'</p>' : '')
+      + (perkRows ? '<h3>'+esc(labels.perks || "")+'</h3><table><thead><tr><th></th><th>'+esc(labels.level || "")+'</th><th></th></tr></thead><tbody>'+perkRows+'</tbody></table>' : '');
+    bindJumps(detailEl);
+  } else if (mode === "skills") {
+    const labels = db.labels || {};
+    const castText = row.cast == null || !labels.cast ? "" : labels.cast.indexOf("{0}") >= 0 ? labels.cast.replace("{0}", row.cast) : labels.cast + " " + row.cast;
+    const meta = [row.kind, row.cooldown != null && labels.cooldown ? labels.cooldown.replace("{0}", row.cooldown) : "", castText].filter(Boolean).join(" · ");
+    const owners = (row.owners || []).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? '<a data-character="'+esc(character.id)+'">'+esc(character.title)+'</a>' : ""; }).filter(Boolean).join("、");
+    const gearLinks = (db.gear || []).filter(g => (g.forcedSkills || []).indexOf(row.name) >= 0 || (g.poolSkills || []).indexOf(row.name) >= 0).map(g => '<a data-gear="'+esc(g.id)+'">'+esc(g.title)+'</a>').join("、");
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+esc(row.title)+'</h2><div class="muted">'+esc(meta)+'</div></div></div>'
+      + (row.top ? '<p>'+esc(row.top)+'</p>' : '')
+      + (row.bottom ? '<p>'+esc(row.bottom)+'</p>' : '')
+      + (owners ? '<p>'+owners+'</p>' : '')
+      + (gearLinks ? '<p>'+gearLinks+'</p>' : '');
+    bindJumps(detailEl);
+  } else if (mode === "gear") {
+    const labels = db.labels || {};
+    const lines = (title, rows) => rows && rows.length ? '<h3>'+esc(title)+'</h3><ul>'+rows.map(text => '<li>'+esc(text)+'</li>').join("")+'</ul>' : '';
+    const classes = (row.classes || []).map((title, index) => {
+      const id = (row.classIds || [])[index];
+      const character = (db.characters || []).find(c => c.id === id);
+      return character ? '<a data-character="'+esc(character.id)+'">'+esc(character.title)+'</a>' : esc(title);
+    }).join("、");
+    const linked = {};
+    (row.forcedSkills || []).concat(row.poolSkills || []).forEach(name => { linked[name] = true; });
+    const skillLinks = Object.keys(linked).map(name => {
+      const skill = (db.skills || []).find(s => s.name === name);
+      return skill ? '<a data-skill="'+esc(skill.name)+'">'+esc(skill.title)+'</a>' : "";
+    }).filter(Boolean).join("、");
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+esc(row.title)+'</h2><div class="muted">'+esc([row.slot, row.rarity].filter(Boolean).join(" · "))+'</div>'+(classes ? '<p>'+classes+'</p>' : '')+'</div></div>'
+      + (row.description ? '<p>'+esc(row.description)+'</p>' : '')
+      + lines(labels.base, row.base)
+      + lines(labels.special, row.forced)
+      + lines(labels.random, row.pool)
+      + (skillLinks ? '<p>'+skillLinks+'</p>' : '')
+      + (db.items && db.items.some(it => String(it.id) === String(row.id)) ? '<p><a data-item="'+esc(row.id)+'">'+esc(row.title)+'</a></p>' : '');
     bindJumps(detailEl);
   } else if (mode === "maps") {
     const colors = ["#e2b15a", "#7dcea0", "#8eb6ff", "#e07a7a", "#c39bd3", "#f0b27a", "#76d7c4", "#f7dc6f", "#85c1e9", "#f5b7b1"];
@@ -1952,10 +2253,25 @@ function open(row) {
       window.addEventListener("pointercancel", onDragEnd);
     });
   }
+  detailEl.scrollTop = 0;
+}
+function syncChrome() {
+  const solo = mode === "dps" || mode === "rules";
+  const main = document.querySelector("main");
+  main.classList.toggle("dps-mode", mode === "dps");
+  main.classList.toggle("rules-mode", mode === "rules");
+  document.querySelector(".search").hidden = solo;
+  if (solo) catEl.hidden = true;
 }
 function setMode(next) {
   if (next === mode) return;
+  if (mode !== "dps" && mode !== "rules") listScroll[mode] = listEl.scrollTop;
   mode = next;
+  if (next === "dps" || next === "rules") {
+    present(next, null);
+    pushView();
+    return;
+  }
   syncCats("全部");
   const rows = filtered();
   const remembered = lastByMode[next];
@@ -1966,6 +2282,7 @@ function setMode(next) {
     document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
     document.getElementById("tab-"+next).classList.add("on");
     renderList();
+    if (listScroll[next]) listEl.scrollTop = listScroll[next];
     current = null;
     detailEl.innerHTML = "";
     pushView();
@@ -1976,6 +2293,9 @@ function rowKey(kind, row) {
   if (kind === "tables") return "t:" + row.enumName;
   if (kind === "sources") return "s:" + row.asset + "|" + row.title;
   if (kind === "items") return "i:" + row.id;
+  if (kind === "characters") return "c:" + row.id;
+  if (kind === "skills") return "k:" + row.name;
+  if (kind === "gear") return "g:" + row.id;
   return "m:" + (row.image || row.title);
 }
 function rowByKey(key) {
@@ -1991,6 +2311,9 @@ function rowByKey(key) {
     return db.sources.find(s => s.asset === asset && s.title === title) || db.sources.find(s => s.asset === asset) || null;
   }
   if (kind === "i") return db.items.find(it => String(it.id) === rest) || null;
+  if (kind === "c") return (db.characters || []).find(c => c.id === rest) || null;
+  if (kind === "k") return (db.skills || []).find(s => s.name === rest) || null;
+  if (kind === "g") return (db.gear || []).find(g => String(g.id) === rest) || null;
   return (db.maps || []).find(m => m.image === rest || m.title === rest) || null;
 }
 function viewState() {
@@ -2004,7 +2327,7 @@ function decodeState(hash) {
   if (!raw) return null;
   const parts = raw.split("/");
   const nextMode = parts[0];
-  if (!["tables", "sources", "items", "maps"].includes(nextMode)) return null;
+  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "dps", "rules"].includes(nextMode)) return null;
   let id = "";
   let q = "";
   let cat = "全部";
@@ -2040,6 +2363,14 @@ function replaceView() {
   writeState(viewState(), true);
 }
 function present(kind, row) {
+  if (listEl && mode !== kind && mode !== "dps" && mode !== "rules") listScroll[mode] = listEl.scrollTop;
+  if (kind === "dps" || kind === "rules") {
+    mode = kind;
+    document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
+    document.getElementById("tab-" + kind).classList.add("on");
+    syncChrome();
+    return;
+  }
   if (kind === "tables") {
     row = sourceForTable(row && (row.enumName || row.title || ""));
     kind = "sources";
@@ -2048,7 +2379,9 @@ function present(kind, row) {
   syncCats();
   document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
   document.getElementById("tab-"+kind).classList.add("on");
+  syncChrome();
   renderList();
+  if (listScroll[kind]) listEl.scrollTop = listScroll[kind];
   if (row) open(row);
   else { current = null; detailEl.innerHTML = ""; }
   const rows = filtered();
@@ -2056,7 +2389,10 @@ function present(kind, row) {
   const btn = idx >= 0 ? listEl.querySelector('.row[data-i="'+idx+'"]') : null;
   if (btn) {
     btn.classList.add("active");
-    btn.scrollIntoView({ block: "nearest" });
+    const listRect = listEl.getBoundingClientRect();
+    const rowRect = btn.getBoundingClientRect();
+    if (rowRect.top < listRect.top) listEl.scrollTop -= listRect.top - rowRect.top;
+    else if (rowRect.bottom > listRect.bottom) listEl.scrollTop += rowRect.bottom - listRect.bottom;
   }
 }
 function applyView(state) {
@@ -2065,7 +2401,12 @@ function applyView(state) {
   if (url === appliedUrl) return;
   appliedUrl = url;
   qEl.value = state.q || "";
+  if (listEl && mode !== state.mode && mode !== "dps" && mode !== "rules") listScroll[mode] = listEl.scrollTop;
   mode = state.mode;
+  if (state.mode === "dps" || state.mode === "rules") {
+    present(state.mode, null);
+    return;
+  }
   syncCats(state.cat);
   present(state.mode, rowByKey(state.id) || filtered()[0] || null);
 }
@@ -2103,8 +2444,13 @@ function applyHash() {
   if (state) applyView(state);
 }
 document.getElementById("tab-sources").onclick = () => setMode("sources");
+document.getElementById("tab-characters").onclick = () => setMode("characters");
+document.getElementById("tab-skills").onclick = () => setMode("skills");
+document.getElementById("tab-gear").onclick = () => setMode("gear");
 document.getElementById("tab-items").onclick = () => setMode("items");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
+document.getElementById("tab-rules").onclick = () => setMode("rules");
+document.getElementById("tab-dps").onclick = () => setMode("dps");
 let searchTimer = 0;
 qEl.oninput = () => {
   renderList();
@@ -2148,8 +2494,10 @@ window.addEventListener("hashchange", () => {
 mode = "sources";
 {
   const saved = decodeState(location.hash);
-  const savedRow = saved && rowByKey(saved.id);
-  if (saved && savedRow) {
+  const savedRow = saved && saved.mode !== "dps" && saved.mode !== "rules" && rowByKey(saved.id);
+  if (saved && (saved.mode === "dps" || saved.mode === "rules")) {
+    present(saved.mode, null);
+  } else if (saved && savedRow) {
     qEl.value = saved.q || "";
     mode = saved.mode;
     syncCats(saved.cat);
