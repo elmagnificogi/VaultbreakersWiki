@@ -60,6 +60,7 @@ jobs:
           fi
 
       - name: Point the release at the static site only
+        id: site
         run: |
           set -euo pipefail
           index=$(mktemp)
@@ -73,6 +74,7 @@ jobs:
           rm -f "$index"
           commit=$(git commit-tree "$tree" -m "静态网页")
           git push origin "$commit:refs/tags/web-${GITHUB_SHA}"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
       - name: Name the release
         id: rel
@@ -82,7 +84,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: web-${{ github.sha }}
-          target_commitish: web-${{ github.sha }}
+          target_commitish: ${{ steps.site.outputs.commit }}
           name: ${{ steps.rel.outputs.name }}
           make_latest: true
           fail_on_unmatched_files: true
