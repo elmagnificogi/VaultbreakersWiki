@@ -131,6 +131,8 @@ Unity 贴图原点在左下，写 PNG 时要先做一次 180° 翻转才是正�
 
 这一版玩法包里没有 `NameLocalized`、`IconFileName`、技能 `Description`，也没有角色的 `CharSelectIconNameString` 等展示字段。物品、装备和技能标题用枚举名查字符串表，顺序是原名、`Title`、`Name`、`_Title`、`_Name`、`Name_` 前缀，再加 `Food` + 名字 + `Name`。名字以 `Item` 结尾时去掉后缀再试。大小写不一致但折成小写后只命中一个 key 时也收。只收含汉字、不超过 24 字、没有 `。！？` 的结果。角色简介用 `枚举名 + CharacterDescription / RoleDescription / Strengths / Weaknesses`，这四条不限长度。角色立绘在展示字段为空时，按职业名回退到图标包里的 `ChrFrameLOng_CutOut_*`（如 Mage、Ranger、DRUID、Rager、Barb/`Barb_Sh`）。物品图标文件名再试去掉末尾 `Item`。对不上就留英文，不要编造译名。
 
+任务在配置包较小的那份 HVPK 里，条目名是 `NpcQuestConfiguration.bytes`。外层是 HVAF，里面是 MessagePack：任务数组，然后任务线数组。字段顺序按 `NpcQuestProxy`。类型用 `QuestType`：主线、支线、每日、每周、建筑升级、物品交付、可重复。目标里的物品用 `ItemType` 对字符串表；奖励是 `ChallengeBoardEntryReward`（物品、数量、稀有度、`QuestBoardRewardType`）。任务标题配置里多半是英文，`<ref>` 能对上中文表才替换。对不上的道具名留配置标识。页面按任务线的父子关系排序，不按标题字母序。只刷新任务时跑 `node extract.js --quests`，它读现有 `data/db.json`，补上任务后再走 `writeHtml`，不会重转地图和图标。
+
 掉落表标题的回退顺序是：资产上的本地化名、`gameName()` 拼出来的 `UnitName_` / `Name_` / `MapName_` 等 key、`describeTable`、箱子的 `describeLoot`、最后才是英文。`gameName` 只接受含汉字、长度 ≤ 40、没有换行的结果。
 
 ## 5. 掉落表、搜刮点、物品怎么关联

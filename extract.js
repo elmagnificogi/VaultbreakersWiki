@@ -7,6 +7,7 @@ const { decodeTexture } = require("./dxt");
 const { extractGameMaps } = require("./maps");
 const { collectCodex } = require("./codex");
 const { readGameplay, part, codexObjects } = require("./artifacts");
+const { collectQuests } = require("./quests");
 const { fillCreaturePortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
@@ -297,7 +298,62 @@ function loadBundle(name) {
   return parseUnityFS(fs.readFileSync(path.join(BUNDLE_DIR, name)));
 }
 
+function namingFrom(byKey) {
+  const keyByFold = new Map();
+  for (const key of byKey.keys()) {
+    const fold = key.toLowerCase();
+    if (!keyByFold.has(fold)) keyByFold.set(fold, key);
+    else if (keyByFold.get(fold) !== key) keyByFold.set(fold, "");
+  }
+  const textForKey = (key) => {
+    if (!key) return "";
+    if (byKey.has(key)) return byKey.get(key);
+    const folded = keyByFold.get(String(key).toLowerCase());
+    return folded ? byKey.get(folded) || "" : "";
+  };
+  const shortChineseName = (raw) => {
+    const text = displayText(raw || "");
+    if (!text || !/[\u4e00-\u9fff]/.test(text) || text.length > 24 || /[。！？]/.test(text)) return "";
+    return text;
+  };
+  const nameFromKeys = (name) => {
+    if (!name) return "";
+    const stems = [name];
+    if (name.endsWith("Item")) stems.push(name.slice(0, -4));
+    for (const stem of stems) {
+      for (const key of [stem, stem + "Title", stem + "Name", stem + "_Title", stem + "_Name", "Name_" + stem, "Food" + stem + "Name"]) {
+        const text = shortChineseName(textForKey(key));
+        if (text) return text;
+      }
+    }
+    return "";
+  };
+  return { textForKey, nameFromKeys };
+}
+
+function refreshQuests() {
+  console.log("reading quests into the current page");
+  const { byKey } = loadChinese();
+  const naming = namingFrom(byKey);
+  const db = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "db.json"), "utf8"));
+  const titles = new Map((db.items || []).map((item) => [item.id, item.title]));
+  db.quests = collectQuests({
+    dumpPath: DUMP,
+    bundle: loadBundle(CONFIG_BUNDLE),
+    displayText,
+    itemTitle: (id) => titles.get(id) || "",
+    ...naming,
+  });
+  fs.writeFileSync(path.join(ROOT, "data", "db.json"), JSON.stringify(db));
+  writeHtml(db);
+  console.log("quests", db.quests.length, "html ready");
+}
+
 function main() {
+  if (process.argv.includes("--quests")) {
+    refreshQuests();
+    return;
+  }
   console.log("reading enums");
   const dump = fs.readFileSync(DUMP, "utf8");
   const items = parseEnum(dump, "ItemType");
@@ -1382,6 +1438,16 @@ function main() {
     nameText: nameFromKeys,
   });
   console.log("characters", codex.characters.length, "skills", codex.skills.length, "gear", codex.gear.length);
+  console.log("reading quests");
+  const quests = collectQuests({
+    dumpPath: DUMP,
+    bundle: config,
+    displayText,
+    textForKey,
+    nameFromKeys,
+    itemTitle: (id) => (itemById[id] && itemById[id].title) || "",
+  });
+  console.log("quests", quests.length);
 
   const usedIcons = new Set();
   for (const table of dropTables) for (const e of table.entries) if (e.itemIcon) usedIcons.add(e.itemIcon);
@@ -1396,6 +1462,7 @@ function main() {
     characters: codex.characters,
     skills: codex.skills,
     gear: codex.gear,
+    quests,
     labels: codex.labels,
     maps: gameMaps,
     rarity: RARITY,
@@ -1535,12 +1602,12 @@ function writeHtml(db) {
 <header>
   <div>
     <h1>龙窟破坏者掉落表</h1>
-    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件。</p>
+    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件，任务 ${(db.quests || []).length} 条。</p>
     <p class="meta">作者 elmagnifico · 版本 v0.2 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
-      <input id="q" placeholder="搜索怪物、箱子、物品、角色、技能、装备" autocomplete="off" />
+      <input id="q" placeholder="搜索怪物、箱子、物品、角色、技能、装备、任务" autocomplete="off" />
       <div id="history" class="search-history" hidden></div>
     </div>
     <select id="cat"></select>
@@ -1550,6 +1617,7 @@ function writeHtml(db) {
       <button id="tab-skills">技能</button>
       <button id="tab-gear">装备</button>
       <button id="tab-items">物品</button>
+      <button id="tab-quests">任务</button>
       <button id="tab-maps">地图</button>
       <button id="tab-rules">难度与多人</button>
       <button id="tab-dps">速算</button>
@@ -2044,7 +2112,7 @@ function rarityText(entry) {
   return entry.rarities.map((v,i) => v ? (db.rarity[i]||("稀有度"+i)) + " " + (v/sum*100).toFixed(0) + "%" : "").filter(Boolean).join(" · ");
 }
 function categoriesFor(kind) {
-  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : [];
+  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : kind === "quests" ? (db.quests || []).map(q => q.type) : [];
   return ["全部", ...[...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh"))];
 }
 function syncCats(preferred) {
@@ -2086,7 +2154,9 @@ function filtered() {
   else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "quests") rows = (db.quests || []).filter(quest => (cat==="全部"||quest.type===cat) && (!q || [quest.title, quest.type, quest.area, quest.sender, quest.receiver, (quest.objectives||[]).join(" "), (quest.needs||[]).map(item => item.name).join(" "), [quest.rewards, quest.alternative, quest.preview, quest.gain].flat().map(item => (item && item.name) || "").join(" ")].join(" ").toLowerCase().includes(q)));
   else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
+  if (mode === "quests") return rows.sort((a, b) => a.order - b.order);
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
 function shown(text) {
@@ -2109,7 +2179,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? (row.role || row.origin || "") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : ((row.places||[]).join("、"));
+    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? (row.role || row.origin || "") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : mode==="quests" ? [row.type, row.area, row.sender].filter(Boolean).join(" · ") : ((row.places||[]).join("、"));
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2174,6 +2244,7 @@ function bindJumps(root) {
   root.querySelectorAll("[data-skill]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.skills || []).find(s => s.name === a.dataset.skill); if (row) show("skills", row); });
   root.querySelectorAll("[data-character]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.characters || []).find(c => c.id === a.dataset.character); if (row) show("characters", row); });
   root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
+  root.querySelectorAll("[data-quest]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.quests || []).find(q => q.id === a.dataset.quest); if (row) show("quests", row); });
 }
 function open(row) {
   current = row;
@@ -2286,6 +2357,28 @@ function open(row) {
       + lines(labels.random, row.pool)
       + (skillLinks ? '<p>'+skillLinks+'</p>' : '')
       + (db.items && db.items.some(it => String(it.id) === String(row.id)) ? '<p><a data-item="'+esc(row.id)+'">'+esc(row.title)+'</a></p>' : '');
+    bindJumps(detailEl);
+  } else if (mode === "quests") {
+    const parent = (db.quests || []).find(quest => quest.id === row.parent);
+    const itemLink = (entry) => {
+      const known = entry.itemId && (db.items || []).find(item => item.id === entry.itemId);
+      const label = known ? icon(known.icon, known.title) + " " + esc(known.title) : esc(entry.name || "");
+      return known ? '<a data-item="'+known.id+'">'+label+'</a>' : label;
+    };
+    const rewardLine = (entry) => [esc(entry.kind), itemLink(entry), entry.count > 1 ? "×" + entry.count : "", entry.rarity ? esc(entry.rarity) : "", entry.variant ? "变体" + entry.variant : "", (entry.unlocks || []).map(esc).join("、")].filter(Boolean).join(" ");
+    const rewardBlock = (title, rows) => rows && rows.length ? '<h3>'+esc(title)+'</h3><ul>'+rows.map(entry => '<li>'+rewardLine(entry)+'</li>').join("")+'</ul>' : "";
+    const who = [row.sender, row.receiver].filter(Boolean).join(" → ");
+    detailEl.innerHTML = '<div class="hero"><div><h2>'+esc(row.title)+'</h2><div class="muted">'+esc([row.type, row.area].filter(Boolean).join(" · "))+'</div>'
+      + (who ? '<p>'+esc(who)+'</p>' : '')
+      + (parent ? '<p>前置 <a data-quest="'+esc(parent.id)+'">'+esc(parent.title)+'</a></p>' : '')
+      + (row.energy ? '<p>接取需要神器能量 '+row.energy+'</p>' : '')
+      + '</div></div>'
+      + '<h3>目标</h3>' + ((row.objectives || []).length ? '<ul>'+row.objectives.map(text => '<li>'+esc(text)+'</li>').join("")+'</ul>' : '<p class="muted">没有目标。</p>')
+      + '<h3>需要的道具</h3>' + ((row.needs || []).length ? '<ul>'+row.needs.map(item => '<li>'+itemLink(item)+(item.count > 1 ? " ×"+item.count : "")+(item.optional ? "（可选）" : "")+'</li>').join("")+'</ul>' : '<p class="muted">没有要交或要带的道具。</p>')
+      + rewardBlock("奖励", row.rewards)
+      + rewardBlock("备选奖励", row.alternative)
+      + rewardBlock("奖励预览", row.preview)
+      + rewardBlock("接取时获得", row.gain);
     bindJumps(detailEl);
   } else if (mode === "maps") {
     const colors = ["#e2b15a", "#7dcea0", "#8eb6ff", "#e07a7a", "#c39bd3", "#f0b27a", "#76d7c4", "#f7dc6f", "#85c1e9", "#f5b7b1"];
@@ -2578,6 +2671,7 @@ function rowKey(kind, row) {
   if (kind === "characters") return "c:" + row.id;
   if (kind === "skills") return "k:" + row.name;
   if (kind === "gear") return "g:" + row.id;
+  if (kind === "quests") return "q:" + row.id;
   return "m:" + (row.image || row.title);
 }
 function rowByKey(key) {
@@ -2596,6 +2690,7 @@ function rowByKey(key) {
   if (kind === "c") return (db.characters || []).find(c => c.id === rest) || null;
   if (kind === "k") return (db.skills || []).find(s => s.name === rest) || null;
   if (kind === "g") return (db.gear || []).find(g => String(g.id) === rest) || null;
+  if (kind === "q") return (db.quests || []).find(quest => quest.id === rest) || null;
   return (db.maps || []).find(m => m.image === rest || m.title === rest) || null;
 }
 function viewState() {
@@ -2609,7 +2704,7 @@ function decodeState(hash) {
   if (!raw) return null;
   const parts = raw.split("/");
   const nextMode = parts[0];
-  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "dps", "rules"].includes(nextMode)) return null;
+  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "quests", "dps", "rules"].includes(nextMode)) return null;
   let id = "";
   let q = "";
   let cat = "全部";
@@ -2730,6 +2825,7 @@ document.getElementById("tab-characters").onclick = () => setMode("characters");
 document.getElementById("tab-skills").onclick = () => setMode("skills");
 document.getElementById("tab-gear").onclick = () => setMode("gear");
 document.getElementById("tab-items").onclick = () => setMode("items");
+document.getElementById("tab-quests").onclick = () => setMode("quests");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
 document.getElementById("tab-rules").onclick = () => setMode("rules");
 document.getElementById("tab-dps").onclick = () => setMode("dps");

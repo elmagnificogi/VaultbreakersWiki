@@ -185,4 +185,4 @@ function codexObjects(records) {
   return objects;
 }
 
-module.exports = { readGameplay, part, codexObjects };
+module.exports = { readGameplay, part, codexObjects, readPack, envelopePayload };
