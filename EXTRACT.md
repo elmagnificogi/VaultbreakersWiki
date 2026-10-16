@@ -7,7 +7,7 @@
 ## 环境
 
 - 游戏目录：`D:\Steam\steamapps\common\Vaultbreakers Demo`
-- wiki 目录：同目录下的 `loot-wiki`
+- wiki 目录：同目录下的 `loot-wiki`。仓库若不在游戏目录里，脚本会再找上面这个 Steam 路径
 - 引擎：Unity `6000.3.18f1`（exe 的 ProductVersion 也是这个，这是引擎版本）
 - IL2CPP metadata：`Vaultbreakers_Data/il2cpp_data/Metadata/global-metadata.dat`，magic `0xFAB11BAF`，version **39**
 - Addressables：**2.9.1**，写在 `Vaultbreakers_Data/StreamingAssets/aa/settings.json` 的 `m_AddressablesVersion`
@@ -42,10 +42,10 @@ node extract.js
 
 | 常量 | 文件 |
 | --- | --- |
-| `CONFIG_BUNDLE` | `0563f413959c8f3465f5b3d19fece440.bundle` |
+| `CONFIG_BUNDLE` | `77707e3e87d9b7e75ff01bab2df18dc4.bundle` |
 | `ICON_BUNDLE` | `d690eafe8fe5a7e08f9f6fa44534a52e.bundle` |
-| `ZH_BUNDLE` | `4ce0a894b5e7192d33184335bd5bec42.bundle` |
-| `SHARED_STRINGS_BUNDLE` | `0be045fb94ecb50bb5159a32ba66c0a4.bundle` |
+| `ZH_BUNDLE` | `955e77e28dd3433c429ebca8aad4c70c.bundle` |
+| `SHARED_STRINGS_BUNDLE` | `811291a6c3f3c7a82fb09cd7a43e0b35.bundle` |
 
 场景包和小地图贴图包不在这张表里，在 `maps.js` 的 `MAP_DEFS`。
 
@@ -66,7 +66,7 @@ flags `0x243` 的拆法（和 `unityfs.js` 的掩码一致）：
 
 `extract.js` 的配置包、图标包、中文包、共享字符串包用 `parseUnityFS` + `extractNode`，因为它们小得多。各包要打开的节点：
 
-- 配置包：路径以 `.sharedAssets` 结尾的节点
+- 配置包：路径里没有 `.` 的那个节点。掉落和单位不再是 Unity 类型树，而在包里的 `SimulationGameplayConfiguration.bytes`。外层是 `HVPK` 清单加 `HVAF` 封套，正文是 MessagePack 字节数组，记录是 7-bit 字符串名字、16 字节头、类型名和定长结构。`DropTableElement` 仍是 stride `0x50`
 - 图标包、中文包：路径里没有 `.` 的那个节点；图标像素在 `.resS`
 - 共享字符串包：节点路径必须是 `CAB-51fbaa50979881bfde5cd85c584e1d3c`
 
@@ -129,7 +129,9 @@ Unity 贴图原点在左下，写 PNG 时要先做一次 180° 翻转才是正�
 - 列表标题和详情标题只用 `row.title`。不要把枚举名、资产名、`#id` 画进列表或详情标题
 - 跳转（`data-jump` / `data-item` / `data-loot`，以及 `show()`）不要给 `qEl.value` 赋值。当前代码没有这种赋值，筛选词保持用户正在输入的内容
 
-物品中文优先走 `NameLocalized.m_TableEntryReference.m_KeyId`，再到中文表。掉落表标题的回退顺序是：资产上的本地化名、`gameName()` 拼出来的 `UnitName_` / `Name_` / `MapName_` 等 key、`describeTable`、箱子的 `describeLoot`、最后才是英文。`gameName` 只接受含汉字、长度 ≤ 40、没有换行的结果。
+这一版玩法包里没有 `NameLocalized`、`IconFileName`、技能 `Description`，也没有角色的 `CharSelectIconNameString` 等展示字段。物品、装备和技能标题用枚举名查字符串表，顺序是原名、`Title`、`Name`、`_Title`、`_Name`、`Name_` 前缀，再加 `Food` + 名字 + `Name`。名字以 `Item` 结尾时去掉后缀再试。大小写不一致但折成小写后只命中一个 key 时也收。只收含汉字、不超过 24 字、没有 `。！？` 的结果。角色简介用 `枚举名 + CharacterDescription / RoleDescription / Strengths / Weaknesses`，这四条不限长度。角色立绘在展示字段为空时，按职业名回退到图标包里的 `ChrFrameLOng_CutOut_*`（如 Mage、Ranger、DRUID、Rager、Barb/`Barb_Sh`）。物品图标文件名再试去掉末尾 `Item`。对不上就留英文，不要编造译名。
+
+掉落表标题的回退顺序是：资产上的本地化名、`gameName()` 拼出来的 `UnitName_` / `Name_` / `MapName_` 等 key、`describeTable`、箱子的 `describeLoot`、最后才是英文。`gameName` 只接受含汉字、长度 ≤ 40、没有换行的结果。
 
 ## 5. 掉落表、搜刮点、物品怎么关联
 
@@ -188,8 +190,8 @@ flags：`2` 仅本职业可用，`4` 占位，`8` 忽略稀有度，`16` 配方�
 
 | id | 场景 bundle | 小地图贴图 bundle | 中文 key |
 | --- | --- | --- | --- |
-| `pinewood` | `22e8bc68e9df03c0af8b54ec8aaec7c0.bundle` | `6dfc96724fd67e223427f4e284491daf.bundle` | `MapName_Pinewood` |
-| `refinery` | `b411e94175656f65f931de14528d785b.bundle` | `3b5fd3da52126ef35d7646afe469b8a3.bundle` | `MapName_Refinery` |
+| `pinewood` | `6d791b5cb0785cb7beca8c1601b4ccb8.bundle` | `6dfc96724fd67e223427f4e284491daf.bundle` | `MapName_Pinewood` |
+| `refinery` | `787d4afed5ef099a0819ea3c40748012.bundle` | `3b5fd3da52126ef35d7646afe469b8a3.bundle` | `MapName_Refinery` |
 | `dragonvault` | `bdaed0fc428a60db80ef56ea6258ee39.bundle` | `5b340e8f45322580fb9e7a6adbe84e02.bundle` | `MapName_Dragonvault` |
 
 世界范围来自场景里带 `_worldSize` 的 `CellBasedCullingBehaviour`（`dump.cs` 里字段是 `_worldSize`、`_worldOffset`，都是 Vector2）。代码用 `asFloat` 读 `_worldSize.x/y` 和 `_worldOffset.x/y`。**y 是世界 Z**，不是世界 Y。读不到或 size 为 0 就不出点。
@@ -284,14 +286,14 @@ top'  = 100 - 原来的 left
 
 图标仍只在 `extract.js` 里 `rotate180`，主循环看到已有文件就跳过。不要给图标加这个 90°。
 
-页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.1**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2137.110314**，后面括号里的 Steam build 25803617 是安装构建号。`1.0` 不是游戏版本：
+页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.2**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2244.110866**，后面括号里的 Steam build 25959928 是安装构建号。`1.0` 不是游戏版本：
 
-- `Vaultbreakers_Data/globalgamemanagers` 的 PlayerSettings 里，连续三个版本字符串是 `visionOSBundleVersion = 1.0`、`tvOSBundleVersion = 1.0`、`bundleVersion = 2.0.2137.110314`
-- `bundleVersion` 才是运行时 `Application.version`。页面上的游戏版本用 **`2.0.2137.110314`**
-- `1.0` 是旁边两个平台字段。Steam `appmanifest_4488770.acf` 的 `buildid` `25803617` 是安装构建号。exe 的 ProductVersion `6000.3.18f1` 是引擎版本
-- 页面上的游戏版本是 `2.0.2137.110314`，括号里保留 Steam build `25803617`
+- `Vaultbreakers_Data/globalgamemanagers` 的 PlayerSettings 里，连续三个版本字符串是 `visionOSBundleVersion = 1.0`、`tvOSBundleVersion = 1.0`、`bundleVersion = 2.0.2244.110866`
+- `bundleVersion` 才是运行时 `Application.version`。页面上的游戏版本用 **`2.0.2244.110866`**
+- `1.0` 是旁边两个平台字段。Steam `appmanifest_4488770.acf` 的 `buildid` `25959928` 是安装构建号。exe 的 ProductVersion `6000.3.18f1` 是引擎版本
+- 页面上的游戏版本是 `2.0.2244.110866`，括号里保留 Steam build `25959928`
 
-作者和 v0.1 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `index.html`。
+作者和 v0.2 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `index.html`。
 
 ## 10. 更新时不要做的事
 

@@ -75,7 +75,7 @@ function maskOf(node) {
 }
 
 function collectCodex(sf, readObject, ctx) {
-  const { asString, walk, byKey, textIds, chinese, abilities, classes, stats: statEnum, specials, iconFor, search, itemById, rarityNames, displayText } = ctx;
+  const { asString, walk, byKey, textIds, chinese, abilities, classes, stats: statEnum, specials, iconFor, search, itemById, rarityNames, displayText, nameText } = ctx;
   const clean = (text) => (displayText ? displayText(text || "") : String(text || ""));
   const zh = (key) => {
     const text = clean(key && byKey.get(key));
@@ -92,6 +92,28 @@ function collectCodex(sf, readObject, ctx) {
     return /[\u4e00-\u9fff]/.test(text) ? text : "";
   };
   const keyText = (value) => zh(asString(value) || "");
+  function characterIcon(enumName, value) {
+    const named =
+      iconFor(asString(value.CharSelectIconNameString) || "") ||
+      iconFor(asString(value.SmallIconNameString) || "") ||
+      iconFor(asString(value.LargeIconNameString) || "") ||
+      iconFor(asString(value.CodexChampionIconNameString) || "") ||
+      iconFor(enumName);
+    if (named) return named;
+    const frames = [];
+    if (/Barbarian/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_Barb", "ChrFrameLOng_CutOut_Barb_Sh");
+    if (/Mage/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_Mage");
+    if (/Ranger/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_Ranger");
+    if (/Druid/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_DRUID");
+    if (/Rager/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_Rager");
+    if (/Monk/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_Monk");
+    if (/Assassin/i.test(enumName)) frames.push("ChrFrameLOng_CutOut_Assassin");
+    for (const frame of frames) {
+      const hit = iconFor(frame);
+      if (hit) return hit;
+    }
+    return null;
+  }
 
   const statText = new Map();
   const specialText = new Map();
@@ -162,7 +184,7 @@ function collectCodex(sf, readObject, ctx) {
     const passive = value.PassiveAbilityConfigurationValues || null;
     const description = value.Description || {};
     const nameKey = asString(description.Name) || enumName;
-    const title = keyText(description.Name) || zh(enumName) || zh(nameKey) || "";
+    const title = keyText(description.Name) || (nameText && nameText(enumName)) || zh(enumName) || (nameText && nameText(nameKey)) || zh(nameKey) || "";
     const top = keyText(description.TopTooltip) || zh(enumName + "_topTooltip") || zh(enumName + "Tier1") || "";
     const bottom = keyText(description.BottomTooltip) || zh(enumName + "_bottomTooltip") || "";
     const cooldownTicks = active ? ticks(active.CooldownSeconds) : null;
@@ -204,6 +226,10 @@ function collectCodex(sf, readObject, ctx) {
     const perkRows = perks(statsNode.SelectablePerks).filter((perk) => perk.level >= 0 && perk.level < 100);
     const title = zhId(desc.CharacterName) || zh(enumName);
     if (!title) continue;
+    const role = zhId(desc.RoleDescription) || zh(enumName + "RoleDescription");
+    const description = zhId(desc.CharacterDescription) || zh(enumName + "CharacterDescription");
+    const strengths = zhId(desc.CharacterStrengths) || zh(enumName + "Strengths");
+    const weaknesses = zhId(desc.CharacterWeaknesses) || zh(enumName + "Weaknesses");
     const originKey = textIds.map[String(desc.CharacterOrigin)] || "";
     const origin = originKey === "Invalid" || originKey === "InvalidString" ? "" : zh(originKey);
     const sheet = [];
@@ -230,15 +256,15 @@ function collectCodex(sf, readObject, ctx) {
       id: enumName,
       classId,
       title,
-      role: zhId(desc.RoleDescription),
-      description: zhId(desc.CharacterDescription),
-      strengths: zhId(desc.CharacterStrengths),
-      weaknesses: zhId(desc.CharacterWeaknesses),
+      role,
+      description,
+      strengths,
+      weaknesses,
       origin,
       originDescription: zhId(desc.OriginDescription),
       quote: zhId(desc.OriginQuote),
       energy: keyText(row.value.EnergyDescription && row.value.EnergyDescription.TopTooltip),
-      icon: iconFor(asString(row.value.CharSelectIconNameString) || "") || iconFor(asString(row.value.SmallIconNameString) || "") || iconFor(asString(row.value.CodexChampionIconNameString) || "") || null,
+      icon: characterIcon(enumName, row.value),
       locked: row.value.IsSelectionUnlocked ? "" : zh("UnlockCharInFullGame") || zh("CharLocked_FeatureToggle"),
       health: typeof statsNode.Health === "number" ? statsNode.Health : null,
       energyStacks: typeof statsNode.MaxEnergyStacks === "number" ? statsNode.MaxEnergyStacks : null,
@@ -364,7 +390,7 @@ function collectCodex(sf, readObject, ctx) {
     const gearNode = row.value.GearItemConfiguration || {};
     const bits = maskOf(item.ItemCategoryMask);
     if ((bits & gearBits) === 0n) continue;
-    const title = localized(row.value.NameLocalized) || zh(enumName);
+    const title = localized(row.value.NameLocalized) || (nameText && nameText(enumName)) || zh(enumName);
     if (!title) continue;
     let slot = "";
     let slotKey = "";

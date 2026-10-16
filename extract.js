@@ -6,15 +6,26 @@ const { parseSerialized, readObject } = require("./serialized");
 const { decodeTexture } = require("./dxt");
 const { extractGameMaps } = require("./maps");
 const { collectCodex } = require("./codex");
+const { readGameplay, part, codexObjects } = require("./artifacts");
 const { fillCreaturePortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
-const GAME = path.resolve(ROOT, "..");
+function gameDir() {
+  const candidates = [
+    path.resolve(ROOT, ".."),
+    "D:\\Steam\\steamapps\\common\\Vaultbreakers Demo",
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "Vaultbreakers_Data"))) return dir;
+  }
+  throw new Error("找不到 Vaultbreakers Demo");
+}
+const GAME = gameDir();
 const BUNDLE_DIR = path.join(GAME, "Vaultbreakers_Data", "StreamingAssets", "aa", "StandaloneWindows64");
-const CONFIG_BUNDLE = "0563f413959c8f3465f5b3d19fece440.bundle";
+const CONFIG_BUNDLE = "77707e3e87d9b7e75ff01bab2df18dc4.bundle";
 const ICON_BUNDLE = "d690eafe8fe5a7e08f9f6fa44534a52e.bundle";
-const ZH_BUNDLE = "4ce0a894b5e7192d33184335bd5bec42.bundle";
-const SHARED_STRINGS_BUNDLE = "0be045fb94ecb50bb5159a32ba66c0a4.bundle";
+const ZH_BUNDLE = "955e77e28dd3433c429ebca8aad4c70c.bundle";
+const SHARED_STRINGS_BUNDLE = "811291a6c3f3c7a82fb09cd7a43e0b35.bundle";
 const DUMP = path.join(ROOT, "il2cpp", "dump.cs");
 
 const RARITY = ["常见", "罕见", "稀有", "卓越", "传奇", "任务物品", "诅咒物品"];
@@ -298,7 +309,8 @@ function main() {
 
   console.log("reading configurations");
   const config = loadBundle(CONFIG_BUNDLE);
-  const node = config.nodes.find((n) => n.path.endsWith(".sharedAssets"));
+  const node = config.nodes.find((n) => n.path.endsWith(".sharedAssets"))
+    || config.nodes.find((n) => !n.path.includes("."));
   const sf = parseSerialized(extractNode(config, node));
   const dropTables = [];
   const sources = [];
@@ -391,6 +403,45 @@ function main() {
     }
   }
   console.log("read", read, "failed", failed, "tables", dropTables.length, "sources", sources.length);
+  let gameplay = [];
+  if (!dropTables.length) {
+    console.log("reading gameplay artifact");
+    gameplay = readGameplay(config);
+    for (const record of gameplay) {
+      const embedded = part(record, "DropTableConfigurationValues");
+      if (embedded) {
+        const enumName = record.asset.replace(/ConfigurationAsset$/, "");
+        const length = embedded.payload.readInt32LE(0);
+        dropTables.push({
+          id: tables.nameToId[enumName] ?? record.id,
+          enumName,
+          asset: record.asset,
+          title: (search[record.asset] && search[record.asset].name) || pretty(enumName),
+          category: (search[record.asset] && search[record.asset].path) || "DropTables",
+          totalWeight: embedded.payload.readInt32LE(0x1004),
+          entries: decodeElements(embedded.payload.subarray(4, 4 + Math.max(0, Math.min(length, 64)) * 0x50), Math.min(length, 64)),
+        });
+      }
+      const unit = part(record, "UnitConfigurationValues");
+      const dropId = unit && unit.payload.length >= 0x14 ? unit.payload.readInt32LE(0x10) : 0;
+      if (dropId > 0) {
+        const parameters = part(record, "UnitConfigurationParameters");
+        const shownId = parameters && parameters.payload.length >= 0x1e8 ? parameters.payload.readInt32LE(0x1e4) : 0;
+        const meta = search[record.asset] || {};
+        sources.push({
+          asset: record.asset,
+          title: meta.name || pretty(record.asset),
+          category: meta.path || "其他",
+          refs: [{ field: "DropTable", id: dropId }],
+          hints: [],
+          shownId,
+          portrait: record.asset.replace(/ConfigurationAsset$/, "") + "_Portrait",
+          iconFile: "",
+        });
+      }
+    }
+    console.log("artifact tables", dropTables.length, "sources", sources.length);
+  }
 
   console.log("exporting icons");
   const iconBundle = loadBundle(ICON_BUNDLE);
@@ -701,6 +752,35 @@ function main() {
   function localizedTitle(assetName, fallback) {
     return textForAsset(assetName) || fallback;
   }
+  function shortChineseName(raw) {
+    const text = displayText(raw || "");
+    if (!text || !/[\u4e00-\u9fff]/.test(text) || text.length > 24 || /[。！？]/.test(text)) return "";
+    return text;
+  }
+  const keyByFold = new Map();
+  for (const key of byKey.keys()) {
+    const fold = key.toLowerCase();
+    if (!keyByFold.has(fold)) keyByFold.set(fold, key);
+    else if (keyByFold.get(fold) !== key) keyByFold.set(fold, "");
+  }
+  function textForKey(key) {
+    if (!key) return "";
+    if (byKey.has(key)) return byKey.get(key);
+    const folded = keyByFold.get(key.toLowerCase());
+    return folded ? byKey.get(folded) || "" : "";
+  }
+  function nameFromKeys(name) {
+    if (!name) return "";
+    const stems = [name];
+    if (name.endsWith("Item")) stems.push(name.slice(0, -4));
+    for (const stem of stems) {
+      for (const key of [stem, stem + "Title", stem + "Name", stem + "_Title", stem + "_Name", "Name_" + stem, "Food" + stem + "Name"]) {
+        const text = shortChineseName(textForKey(key));
+        if (text) return text;
+      }
+    }
+    return "";
+  }
   function localizedItemTitle(enumName, fallback) {
     const exact = textForAsset(enumName + "ConfigurationAsset");
     if (exact) return exact;
@@ -710,8 +790,11 @@ function main() {
     const linked = textForAsset(linkedAssets[enumName] || "");
     if (linked && /[\u4e00-\u9fff]/.test(linked)) return linked;
     const hits = aliasAssets.get(assetAlias(enumName)) || [];
-    if (hits.length === 1) return textForAsset(hits[0]) || fallback;
-    return fallback;
+    if (hits.length === 1) {
+      const titled = textForAsset(hits[0]);
+      if (titled) return titled;
+    }
+    return nameFromKeys(enumName) || fallback;
   }
   let translated = 0;
   for (const id of Object.values(nameIds)) if (chinese.get(id)) translated++;
@@ -735,7 +818,7 @@ function main() {
         english,
         places: placesForEnum(name),
         title: localizedItemTitle(name, english),
-        icon: iconFor(iconFiles[name + "ConfigurationAsset"]) || iconFor(iconFiles[name]) || iconFor(name) || iconFor(iconKey) || iconFor("RegularItem" + name) || iconFor("NamedItem" + name.replace(/^NamedItem/, "")) || null,
+        icon: iconFor(iconFiles[name + "ConfigurationAsset"]) || iconFor(iconFiles[name]) || iconFor(name) || iconFor(name.replace(/Item$/, "")) || iconFor(iconKey) || iconFor("RegularItem" + name) || iconFor("NamedItem" + name.replace(/^NamedItem/, "")) || null,
       };
     });
   const itemById = Object.fromEntries(itemList.map((it) => [it.id, it]));
@@ -1279,7 +1362,9 @@ function main() {
   });
 
   console.log("reading characters, skills, gear");
-  const codex = collectCodex(sf, readObject, {
+  const codexSource = gameplay.length ? { objects: codexObjects(gameplay) } : sf;
+  const codexRead = gameplay.length ? (_sf, obj) => obj : readObject;
+  const codex = collectCodex(codexSource, codexRead, {
     asString,
     walk,
     byKey,
@@ -1294,6 +1379,7 @@ function main() {
     itemById,
     rarityNames: RARITY,
     displayText,
+    nameText: nameFromKeys,
   });
   console.log("characters", codex.characters.length, "skills", codex.skills.length, "gear", codex.gear.length);
 
@@ -1450,7 +1536,7 @@ function writeHtml(db) {
   <div>
     <h1>龙窟破坏者掉落表</h1>
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.1 · 对应游戏版本 2.0.2137.110314（Steam build 25803617） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p class="meta">作者 elmagnifico · 版本 v0.2 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
