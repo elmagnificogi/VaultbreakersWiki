@@ -499,6 +499,36 @@ function collectQuestNeeds() {
   const count = reader.i32();
   const needs = new Map();
   const seen = new Set();
+  const quests = [];
+  const questSeen = new Set();
+  const textOf = (key) => {
+    const keyId = keyToId.get(key);
+    return keyId ? displayText(expand(rawById.get(String(keyId)) || "", 0)) : "";
+  };
+  const chinese = (text) => /[\u4e00-\u9fff]/.test(text || "") ? text : "";
+  const npcEnum = parseEnum(fs.readFileSync(DUMP, "utf8"), "NpcType");
+  const npcName = (id) => {
+    const en = npcEnum.map[String(id | 0)];
+    if (!en) return "";
+    return chinese(textOf("Name_" + en) || textOf(en));
+  };
+  const areaKeys = [[2, "MapName_Pinewood"], [4, "MapName_Refinery"], [8, "MapName_Haven"], [16, "MapName_Bloodswamp"], [32, "MapName_Dragonvault"], [64, "MapName_TitanFactory"]];
+  const areaName = new Map(areaKeys.map(([flag, key]) => [flag, chinese(textOf(key))]));
+  const shortLabel = (keys) => {
+    for (const key of keys) {
+      const text = chinese(textOf(key));
+      if (text && text.length <= 8 && !/[A-Za-z]/.test(text)) return text;
+    }
+    return "";
+  };
+  const typeName = {
+    1: shortLabel(["QuestType_MainQuestLine", "MainQuestLine", "Quest_MainQuestLine"]),
+    2: shortLabel(["QuestType_Daily", "DailyQuest", "Quest_Daily"]),
+    3: shortLabel(["QuestType_Weekly", "WeeklyQuest", "Quest_Weekly"]),
+    4: shortLabel(["QuestType_BuildingUpgrade", "BuildingUpgradeQuest"]),
+    5: shortLabel(["QuestType_ObjectDelivery", "ObjectDeliveryQuest"]),
+    6: shortLabel(["QuestType_Repeatable", "RepeatableQuest", "Quest_Repeatable"]),
+  };
   for (let i = 0; i < count; i++) {
     readValue(reader, element.children[0]);
     const type = readValue(reader, element.children[1]);
@@ -510,6 +540,58 @@ function collectQuestNeeds() {
     const questId = charsOf(value._questId);
     const title = questTitle(questId);
     if (!title || !/[\u4e00-\u9fff]/.test(title)) continue;
+    if (!questSeen.has(questId)) {
+      questSeen.add(questId);
+      const steps = [];
+      const stepSeen = new Set();
+      for (const objective of value.Objectives || []) {
+        const kind = QUEST_NEED[objective.Type];
+        const itemId = objective.ItemType | 0;
+        const amount = objective.Count > 0 ? objective.Count : 1;
+        if (kind && itemId > 0) {
+          const stepKey = kind + "|" + itemId + "|" + amount;
+          if (!stepSeen.has(stepKey)) {
+            stepSeen.add(stepKey);
+            steps.push({ kind: objective.Optional ? kind + "（可选）" : kind, item: itemId, count: amount });
+          }
+          continue;
+        }
+        if (!objective.UseCustomDescription) continue;
+        const custom = displayText(expand(charsOf(objective.CustomDescription), 0));
+        if (!chinese(custom) || /[A-Za-z]{4,}/.test(custom)) continue;
+        const text = objective.Optional && !custom.includes("可选") ? custom + "（可选）" : custom;
+        if (stepSeen.has(text)) continue;
+        stepSeen.add(text);
+        steps.push({ text, count: amount > 1 ? amount : 0 });
+      }
+      const rewards = [];
+      const rewardSeen = new Set();
+      for (const reward of value.Rewards || []) {
+        if ((reward.RewardType | 0) !== 0) continue;
+        const itemId = reward.ItemType | 0;
+        if (itemId <= 0 || rewardSeen.has(itemId)) continue;
+        rewardSeen.add(itemId);
+        rewards.push({ item: itemId, count: reward.StackSize > 0 ? reward.StackSize : 1 });
+      }
+      const areas = [];
+      const flags = value.QuestAreaFlags | 0;
+      for (const [flag, name] of areaName) if (name && (flags & flag)) areas.push(name);
+      const kind = typeName[value.QuestType | 0] || "";
+      if (kind && !areas.includes(kind)) areas.push(kind);
+      const giver = npcName(value.Sender);
+      const turnIn = npcName(value.Receiver);
+      quests.push({
+        id: questId,
+        title,
+        description: chinese(textOf(questId + "-Desc")),
+        handIn: chinese(textOf(questId + "-HandIn")),
+        giver,
+        turnIn: turnIn && turnIn !== giver ? turnIn : "",
+        areas,
+        steps,
+        rewards,
+      });
+    }
     for (const objective of value.Objectives || []) {
       const kind = QUEST_NEED[objective.Type];
       const itemId = objective.ItemType | 0;
@@ -519,11 +601,12 @@ function collectQuestNeeds() {
       if (seen.has(key)) continue;
       seen.add(key);
       if (!needs.has(itemId)) needs.set(itemId, []);
-      needs.get(itemId).push({ quest: title, kind: objective.Optional ? kind + "（可选）" : kind, count: amount });
+      needs.get(itemId).push({ quest: title, id: questId, kind: objective.Optional ? kind + "（可选）" : kind, count: amount });
     }
   }
   for (const rows of needs.values()) rows.sort((a, b) => a.quest.localeCompare(b.quest, "zh-CN") || a.kind.localeCompare(b.kind, "zh-CN"));
-  return needs;
+  quests.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+  return { needs, quests };
 }
 
 function main() {
@@ -1550,7 +1633,8 @@ function main() {
 
   attachCombat(sources);
 
-  const questNeeds = collectQuestNeeds();
+  const questCatalog = collectQuestNeeds();
+  const questNeeds = questCatalog.needs;
   let questItems = 0;
   for (const item of itemList) {
     const rows = questNeeds.get(item.id);
@@ -1570,6 +1654,7 @@ function main() {
     dropTables: dropTables.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
     sources: sources.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
     items: itemList.filter((it) => it.needs || it.icon || dropTables.some((t) => t.entries.some((e) => e.item === it.id))).sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
+    quests: questCatalog.quests,
     characters: codex.characters,
     skills: codex.skills,
     gear: codex.gear,
@@ -1721,12 +1806,12 @@ function writeHtml(db) {
 <header>
   <div>
     <h1>龙窟破坏者掉落表</h1>
-    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件。</p>
+    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件，任务 ${(db.quests || []).length} 个。</p>
     <p class="meta">作者 elmagnifico · 版本 v0.3 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
-      <input id="q" placeholder="搜索怪物、箱子、物品、角色、技能、装备" autocomplete="off" />
+      <input id="q" placeholder="搜索怪物、箱子、物品、任务、角色、技能、装备" autocomplete="off" />
       <div id="history" class="search-history" hidden></div>
     </div>
     <select id="cat"></select>
@@ -1736,6 +1821,7 @@ function writeHtml(db) {
       <button id="tab-skills">技能</button>
       <button id="tab-gear">装备</button>
       <button id="tab-items">物品</button>
+      <button id="tab-quests">任务</button>
       <button id="tab-maps">地图</button>
       <button id="tab-rules">难度与多人</button>
       <button id="tab-dps">速算</button>
@@ -2230,7 +2316,7 @@ function rarityText(entry) {
   return entry.rarities.map((v,i) => v ? (db.rarity[i]||("稀有度"+i)) + " " + (v/sum*100).toFixed(0) + "%" : "").filter(Boolean).join(" · ");
 }
 function categoriesFor(kind) {
-  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : [];
+  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : kind === "quests" ? (db.quests || []).flatMap(q => q.areas || []) : [];
   return ["全部", ...[...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh"))];
 }
 function syncCats(preferred) {
@@ -2259,6 +2345,11 @@ function rowTitle(row) {
   if (mode === "sources") return sourceLabel(row);
   return row.title || "";
 }
+function itemTitle(id) {
+  if (!id) return "";
+  const item = (db.items || []).find(it => String(it.id) === String(id));
+  return item ? item.title : "";
+}
 function filtered() {
   const q = qEl.value.trim().toLowerCase();
   const cat = catEl.value;
@@ -2272,6 +2363,7 @@ function filtered() {
   else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+characterSummary(c)+" "+(c.stats||[]).map(s => s.label+" "+s.value).join(" ")+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "quests") rows = (db.quests || []).filter(quest => (cat==="全部"||(quest.areas||[]).includes(cat)) && (!q || (quest.title+" "+(quest.description||"")+" "+(quest.handIn||"")+" "+(quest.giver||"")+" "+(quest.turnIn||"")+" "+(quest.areas||[]).join(" ")+" "+(quest.steps||[]).map(step => (step.kind||"")+" "+(step.text||"")+" "+itemTitle(step.item)).join(" ")+" "+(quest.rewards||[]).map(reward => itemTitle(reward.item)).join(" ")).toLowerCase().includes(q)));
   else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")+" "+(it.needs||[]).map(n => n.quest+" "+n.kind).join(" ")).toLowerCase().includes(q)));
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
@@ -2295,7 +2387,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : ""].filter(Boolean).join(" · ");
+    const sub = mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : ""].filter(Boolean).join(" · ");
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2433,6 +2525,7 @@ function bindJumps(root) {
   root.querySelectorAll("[data-skill]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.skills || []).find(s => s.name === a.dataset.skill); if (row) show("skills", row); });
   root.querySelectorAll("[data-character]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.characters || []).find(c => c.id === a.dataset.character); if (row) show("characters", row); });
   root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
+  root.querySelectorAll("[data-quest]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.quests || []).find(q => q.id === a.dataset.quest); if (row) show("quests", row); });
 }
 function open(row) {
   current = row;
@@ -2489,13 +2582,39 @@ function open(row) {
     const places = (row.places||[]).join("、");
     const needs = row.needs || [];
     const needTable = '<h3>任务需要</h3><table><thead><tr><th>任务</th><th>要求</th><th>数量</th></tr></thead><tbody>'
-      + (needs.length ? needs.map(need => '<tr><td>'+esc(need.quest)+'</td><td>'+esc(need.kind)+'</td><td>'+need.count+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有任务需要这个</td></tr>')
+      + (needs.length ? needs.map(need => {
+        const quest = (db.quests || []).find(q => (need.id && q.id === need.id) || q.title === need.quest);
+        const name = quest ? '<a data-quest="'+esc(quest.id)+'">'+esc(need.quest)+'</a>' : esc(need.quest);
+        return '<tr><td>'+name+'</td><td>'+esc(need.kind)+'</td><td>'+need.count+'</td></tr>';
+      }).join("") : '<tr><td colspan="3" class="muted">没有任务需要这个</td></tr>')
       + '</tbody></table>';
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
       + needTable
       + '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
       + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
       + '</tbody></table>';
+    bindJumps(detailEl);
+  } else if (mode === "quests") {
+    const itemLink = (id) => {
+      const title = itemTitle(id);
+      return title ? '<a data-item="'+id+'">'+esc(title)+'</a>' : "";
+    };
+    const stepRows = (row.steps || []).map(step => {
+      const what = step.item ? itemLink(step.item) : esc(step.text || "");
+      if (!what) return "";
+      return '<tr><td>'+esc(step.kind || "")+'</td><td>'+what+'</td><td>'+(step.count || "")+'</td></tr>';
+    }).filter(Boolean).join("");
+    const rewardRows = (row.rewards || []).map(reward => {
+      const what = itemLink(reward.item);
+      if (!what) return "";
+      return '<tr><td>'+what+'</td><td>'+reward.count+'</td></tr>';
+    }).filter(Boolean).join("");
+    const who = [row.giver ? "委托人："+row.giver : "", row.turnIn ? "交付："+row.turnIn : "", (row.areas||[]).length ? "地点："+row.areas.join("、") : ""].filter(Boolean).join(" · ");
+    detailEl.innerHTML = '<div class="hero"><div><h2>'+esc(row.title)+'</h2>'+(who ? '<div class="muted">'+esc(who)+'</div>' : '')+'</div></div>'
+      + (row.description ? '<p>'+esc(row.description)+'</p>' : '')
+      + '<h3>目标</h3>' + (stepRows ? '<table><thead><tr><th>要求</th><th>内容</th><th>数量</th></tr></thead><tbody>'+stepRows+'</tbody></table>' : '<p class="muted">没有写明的目标。</p>')
+      + '<h3>奖励</h3>' + (rewardRows ? '<table><thead><tr><th>物品</th><th>数量</th></tr></thead><tbody>'+rewardRows+'</tbody></table>' : '<p class="muted">没有写明的物品奖励。</p>')
+      + (row.handIn ? '<h3>交付时</h3><p>'+esc(row.handIn)+'</p>' : '');
     bindJumps(detailEl);
   } else if (mode === "characters") {
     const labels = db.labels || {};
@@ -2863,6 +2982,7 @@ function rowKey(kind, row) {
   if (kind === "characters") return "c:" + row.id;
   if (kind === "skills") return "k:" + row.name;
   if (kind === "gear") return "g:" + row.id;
+  if (kind === "quests") return "q:" + row.id;
   return "m:" + (row.image || row.title);
 }
 function rowByKey(key) {
@@ -2881,6 +3001,7 @@ function rowByKey(key) {
   if (kind === "c") return (db.characters || []).find(c => c.id === rest) || null;
   if (kind === "k") return (db.skills || []).find(s => s.name === rest) || null;
   if (kind === "g") return (db.gear || []).find(g => String(g.id) === rest) || null;
+  if (kind === "q") return (db.quests || []).find(q => q.id === rest) || null;
   return (db.maps || []).find(m => m.image === rest || m.title === rest) || null;
 }
 function viewState() {
@@ -2894,7 +3015,7 @@ function decodeState(hash) {
   if (!raw) return null;
   const parts = raw.split("/");
   const nextMode = parts[0];
-  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "dps", "rules"].includes(nextMode)) return null;
+  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "quests", "dps", "rules"].includes(nextMode)) return null;
   let id = "";
   let q = "";
   let cat = "全部";
@@ -3015,6 +3136,7 @@ document.getElementById("tab-characters").onclick = () => setMode("characters");
 document.getElementById("tab-skills").onclick = () => setMode("skills");
 document.getElementById("tab-gear").onclick = () => setMode("gear");
 document.getElementById("tab-items").onclick = () => setMode("items");
+document.getElementById("tab-quests").onclick = () => setMode("quests");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
 document.getElementById("tab-rules").onclick = () => setMode("rules");
 document.getElementById("tab-dps").onclick = () => setMode("dps");
