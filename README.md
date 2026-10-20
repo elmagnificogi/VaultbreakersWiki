@@ -2,11 +2,11 @@
 
 Steam 测试版《Vaultbreakers》的资料页。掉落表、怪物、搜刮点、物品，以及狼林、精炼厂、龙窟三张小地图，都从本地客户端的配置和贴图整理出来。名称用游戏内简体中文。客户端没有译文的条目仍显示原文。
 
-作者 elmagnifico。页面版本 v0.2，对应的测试版写在页面页眉。
+作者 elmagnifico。页面版本 v0.3，对应的测试版写在页面页眉。
 
 ## 查看
 
-到 [Releases](https://github.com/elmagnificogi/VaultbreakersWiki/releases) 下载最新的 `Vaultbreakers-loot-wiki.zip`，解压后双击 `index.html`。
+到 [Releases](https://github.com/elmagnificogi/VaultbreakersWiki/releases) 下载最新的压缩包。文件名带页面版本和打包时间，例如 `Vaultbreakers-loot-wiki-v0.3-20261020-173000.zip`。解压后双击 `index.html`。
 
 也可以克隆本仓库，直接用浏览器打开仓库里的 `index.html`。图标、地图和 `data/db.json` 用的是相对路径，这些目录要留在 `index.html` 旁边。
 
@@ -21,7 +21,7 @@ Steam 测试版《Vaultbreakers》的资料页。掉落表、怪物、搜刮点�
 
 ## 自动打包
 
-推送到 `main` 之后，GitHub Actions 会把可直接打开的页面打成 `Vaultbreakers-loot-wiki.zip`，挂到这次提交的 Release 上。标签是 `web-` 加上提交哈希。这个标签只含静态页面，不含仓库里的其他文件。
+推送到 `main` 之后，GitHub Actions 会把可直接打开的页面打成压缩包，挂到这次提交的 Release 上。文件名是 `Vaultbreakers-loot-wiki-` 加上页眉里的页面版本和打包时间。标签是 `web-` 加上提交哈希。这个标签只含静态页面，不含仓库里的其他文件。
 
 压缩包里只有 `index.html`、`icons/` 里的图片、三张小地图，以及一段打开说明。页面数据已经写在 `index.html` 里。解包脚本、`EXTRACT.md`、`data/db.json`、依赖清单和反编译工具都不会打进去。
 

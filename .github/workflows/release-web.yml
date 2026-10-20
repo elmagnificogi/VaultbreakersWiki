@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Pack the viewable site
+        id: pack
         run: |
           set -euo pipefail
           rm -rf site
@@ -53,11 +54,19 @@ jobs:
               raise SystemExit(f"site pack incomplete: missing={missing} icons={len(icons)}")
           print(f"packed icons {len(icons)}")
           PY
-          (cd site && zip -qr ../Vaultbreakers-loot-wiki.zip .)
-          if unzip -l Vaultbreakers-loot-wiki.zip | grep -Ei '\.(js|cs|dll|exe)$|EXTRACT\.md|package\.json|dump\.cs|Il2Cpp|node_modules'; then
+          version=$(grep -oE '版本 v[0-9]+(\.[0-9]+)+' index.html | head -n 1 | awk '{print $2}')
+          if [ -z "$version" ]; then
+            echo "page version missing from index.html" >&2
+            exit 1
+          fi
+          stamp=$(TZ=Asia/Shanghai date +%Y%m%d-%H%M%S)
+          archive="Vaultbreakers-loot-wiki-${version}-${stamp}.zip"
+          (cd site && zip -qr "../${archive}" .)
+          if unzip -l "$archive" | grep -Ei '\.(js|cs|dll|exe)$|EXTRACT\.md|package\.json|dump\.cs|Il2Cpp|node_modules'; then
             echo "zip contains files that are not part of the static site" >&2
             exit 1
           fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Point the release at the static site only
         id: site
@@ -88,7 +97,7 @@ jobs:
           name: ${{ steps.rel.outputs.name }}
           make_latest: true
           fail_on_unmatched_files: true
-          files: Vaultbreakers-loot-wiki.zip
+          files: ${{ steps.pack.outputs.archive }}
           body: |
             解压后用浏览器打开 index.html，不需要安装游戏。
             压缩包只有页面、图标和三张小地图。

@@ -6,6 +6,7 @@ const { parseSerialized, readObject, readValue, R } = require("./serialized");
 const { decodeTexture } = require("./dxt");
 const { extractGameMaps, collectSpawns, MAP_DEFS } = require("./maps");
 const { collectCodex } = require("./codex");
+const { attachCombat } = require("./combat");
 const { fillCreaturePortraits, fillNpcPortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
@@ -873,7 +874,7 @@ function main() {
       look = huge;
       icon = "icons/ChestDragonGold.png";
     } else if (/ExtraHigh2/.test(name)) {
-      title = withDigit(ashenGreat);
+      title = ashen;
       look = ashen;
       icon = "icons/ChestDragonSilver.png";
     } else if (/ExtraHigh/.test(name)) {
@@ -1547,6 +1548,8 @@ function main() {
   });
   console.log("characters", codex.characters.length, "skills", codex.skills.length, "gear", codex.gear.length);
 
+  attachCombat(sources);
+
   const questNeeds = collectQuestNeeds();
   let questItems = 0;
   for (const item of itemList) {
@@ -1649,6 +1652,7 @@ function writeHtml(db) {
   .mapstage svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .region-label { position:absolute; z-index:1; transform:translate(-50%,-50%); font-size:13px; font-weight:700; color:#fff; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
   .pin { position:absolute; z-index:2; width:12px; height:12px; margin:0; padding:0; border:1px solid #111; border-radius:50%; transform:translate(-50%,-50%); cursor:pointer; }
+  .pin.maybe { background:transparent; border-style:dashed; border-width:2px; }
   .spawn-map { position:relative; max-width:560px; margin:8px 0 4px; }
   .spawn-map img { width:100%; display:block; }
   .spawn-map svg { position:absolute; inset:0; width:100%; height:100%; }
@@ -1718,7 +1722,7 @@ function writeHtml(db) {
   <div>
     <h1>龙窟破坏者掉落表</h1>
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.2 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p class="meta">作者 elmagnifico · 版本 v0.3 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
@@ -2263,9 +2267,9 @@ function filtered() {
     if (!t.entries.length && !q) return false;
     return (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+(dropWords[t.enumName]||"")).toLowerCase().includes(q));
   });
-  else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+combatWords(s)+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
   else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
-  else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+characterSummary(c)+" "+(c.stats||[]).map(s => s.label+" "+s.value).join(" ")+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
   else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")+" "+(it.needs||[]).map(n => n.quest+" "+n.kind).join(" ")).toLowerCase().includes(q)));
@@ -2291,7 +2295,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? (row.role || row.origin || "") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : ""].filter(Boolean).join(" · ");
+    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : ""].filter(Boolean).join(" · ");
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2302,6 +2306,54 @@ function renderList() {
     open(filtered()[Number(btn.dataset.i)]);
     pushView();
   });
+}
+function combatSummary(row) {
+  const combat = row.combat;
+  if (!combat) return "";
+  const hit = (combat.attacks || []).find(atk => (atk.hits || []).length);
+  const first = hit && hit.hits[0];
+  return "生命 " + combat.health + (first ? " · " + first.kind + " " + first.amount + (first.tick ? " 每跳" : "") : "");
+}
+function combatWords(row) {
+  const combat = row.combat;
+  if (!combat) return "";
+  return (combat.attacks || []).map(atk => (atk.title || "") + " " + (atk.hits || []).map(hit => hit.kind + " " + hit.amount + (hit.tick ? " 每跳" : "")).join(" ")).join(" ");
+}
+function combatBlock(row) {
+  const combat = row.combat;
+  if (!combat) return "";
+  const text = (n) => {
+    if (typeof n !== "number") return "";
+    if (Math.abs(n - Math.round(n)) < 0.001) return String(Math.round(n));
+    return String(Math.round(n * 100) / 100);
+  };
+  const cd = (value) => !value ? "" : (Array.isArray(value) ? text(value[0]) + "–" + text(value[1]) : text(value)) + " 秒";
+  const weak = combat.armor < combat.resist ? "护甲更低，更怕物理伤害。" : combat.resist < combat.armor ? "魔法抗性更低，更怕魔法伤害。" : combat.armor === 0 ? "没有护甲和魔法抗性，物理伤害和魔法伤害都不减免。" : "护甲和魔法抗性相同。";
+  const attacks = (combat.attacks || []).map(atk => {
+    const hurt = (atk.hits || []).map(hit => hit.kind + " " + text(hit.amount) + (hit.max ? "–" + text(hit.max) : "") + (hit.tick ? " 每跳" : "")).join("、");
+    return "<tr><td>" + esc(atk.title || hurt || "攻击") + "</td><td>" + esc(hurt) + "</td><td>" + esc(cd(atk.cooldown)) + "</td><td>" + esc(atk.range ? text(atk.range) : "") + "</td></tr>";
+  }).join("");
+  return '<h3>属性</h3><table><tbody><tr><td>生命值</td><td>' + text(combat.health) + '</td></tr><tr><td>护甲</td><td>' + text(combat.armor) + '</td></tr><tr><td>魔法抗性</td><td>' + text(combat.resist) + '</td></tr></tbody></table><p class="muted">' + weak + ' 每点护甲或魔法抗性，大约相当于多用 1% 生命去承受对应伤害。这是普通形态，精英、噩梦和庇护所的敌人难度还会再提高生命和伤害。</p>'
+    + (attacks ? '<h3>攻击</h3><table><thead><tr><th>技能</th><th>伤害</th><th>冷却</th><th>射程</th></tr></thead><tbody>' + attacks + '</tbody></table>' : '');
+}
+function characterSummary(row) {
+  const stats = row && row.stats || [];
+  const value = (label) => {
+    const stat = stats.find(item => item.label === label);
+    return stat ? String(stat.value) : "";
+  };
+  const parts = [];
+  if (value("生命值")) parts.push("生命 " + value("生命值"));
+  if (value("物理伤害")) parts.push("物理 " + value("物理伤害"));
+  if (value("魔法伤害") && value("魔法伤害") !== "0") parts.push("魔法 " + value("魔法伤害"));
+  if (value("护甲")) parts.push("护甲 " + value("护甲"));
+  if (value("魔法抗性")) parts.push("魔法抗性 " + value("魔法抗性"));
+  return parts.join(" · ");
+}
+function innateNote(row) {
+  if (!row || row.armor == null || row.resist == null) return "";
+  const line = Number(row.armor) < Number(row.resist) ? "护甲更低，更怕物理伤害。" : Number(row.resist) < Number(row.armor) ? "魔法抗性更低，更怕魔法伤害。" : Number(row.armor) === 0 ? "没有护甲和魔法抗性，物理伤害和魔法伤害都不减免。" : "护甲和魔法抗性相同。";
+  return '<p class="muted">' + line + " 每点护甲或魔法抗性，大约相当于多用 1% 生命去承受对应伤害。攻击速度、暴击率和冷却缩减没有写在角色的天生属性里。</p>";
 }
 function spawnSummary(row) {
   const spawns = row.spawns || [];
@@ -2418,7 +2470,7 @@ function open(row) {
     }).join("");
     const where = [row.place && ("地点："+row.place), row.look && row.look !== row.title && !String(row.title).includes(row.look) && ("样子："+row.look)].filter(Boolean).join(" · ");
     const spots = spawnMaps(row);
-    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, sourceLabel(row))+'<div><h2>'+sourceLabel(row).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + (spots ? '<h3>可能刷新</h3>'+spots : '') + blocks;
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, sourceLabel(row))+'<div><h2>'+sourceLabel(row).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + combatBlock(row) + (spots ? '<h3>可能刷新</h3>'+spots : '') + blocks;
     bindJumps(detailEl);
   } else if (mode === "items") {
     const from = [];
@@ -2453,14 +2505,16 @@ function open(row) {
       const itemCell = item ? '<a data-item="'+esc(item.id)+'">'+esc(perk.itemTitle || item.title)+'</a>' : esc(perk.itemTitle || "");
       return '<tr><td>'+skillLink(perk)+'</td><td>'+esc(perk.level)+'</td><td>'+itemCell+'</td></tr>';
     }).join("");
-    const statRows = (row.stats || []).map(stat => '<tr><td>'+esc(stat.label)+'</td><td>'+esc(stat.value)+'</td></tr>').join("");
+    const innate = (row.stats || []).slice();
+    if (row.vision) innate.push({ label: "视野范围", value: row.vision });
+    const statRows = innate.map(stat => '<tr><td>'+esc(stat.label)+'</td><td>'+esc(stat.value)+'</td></tr>').join("");
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+esc(row.title)+'</h2><div class="muted">'+esc([row.origin, row.role].filter(Boolean).join(" · "))+'</div>'+(row.locked ? '<p>'+esc(row.locked)+'</p>' : '')+'</div></div>'
       + (row.description ? '<p>'+esc(row.description)+'</p>' : '')
       + (row.strengths || row.weaknesses ? '<p>'+[row.strengths, row.weaknesses].filter(Boolean).map(esc).join("<br>")+'</p>' : '')
       + (row.originDescription ? '<p>'+esc(row.originDescription)+'</p>' : '')
       + (row.quote ? '<p class="muted">'+esc(row.quote)+'</p>' : '')
       + (row.energy ? '<p>'+esc(row.energy)+'</p>' : '')
-      + (statRows ? '<table><tbody>'+statRows+'</tbody></table>' : '')
+      + (statRows ? '<h3>'+esc(labels.base || "基础属性")+'</h3><table><tbody>'+statRows+'</tbody></table>'+innateNote(row) : '')
       + (row.basicSkill ? '<h3>'+skillLink(row.basicSkill)+'</h3>' : '')
       + ((row.activeSkills || []).length ? '<p>'+(row.activeSkills || []).map(skillLink).join("、")+'</p>' : '')
       + ((row.passiveSkills || []).length ? '<p>'+(row.passiveSkills || []).map(skillLink).join("、")+'</p>' : '')
@@ -2504,7 +2558,18 @@ function open(row) {
     const colors = ["#e2b15a", "#7dcea0", "#8eb6ff", "#e07a7a", "#c39bd3", "#f0b27a", "#76d7c4", "#f7dc6f", "#85c1e9", "#f5b7b1"];
     const regionColors = ["#7dcea0", "#8eb6ff", "#e2b15a", "#e07a7a", "#c39bd3", "#f0b27a", "#76d7c4", "#f7dc6f", "#85c1e9", "#f5b7b1", "#abebc6", "#d7bde2"];
     const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
-    const titles = [...new Set(row.pins.map(pin => pin.title))];
+    const maybe = [];
+    for (const source of db.sources) {
+      if (source.category !== "搜刮点") continue;
+      const table = source.refs && source.refs[0] ? source.refs[0].table : "";
+      for (const point of source.spawns || []) {
+        if (point.map !== row.id) continue;
+        const placed = row.pins.some(pin => pin.title === source.title && Math.abs(pin.left - point.left) < 1.2 && Math.abs(pin.top - point.top) < 1.2);
+        if (placed) continue;
+        maybe.push({ title: source.title, table: table, left: point.left, top: point.top });
+      }
+    }
+    const titles = [...new Set(row.pins.map(pin => pin.title).concat(maybe.map(pin => pin.title)))];
     const colorOf = (title) => colors[titles.indexOf(title) % colors.length];
     const regions = row.regions || [];
     const q = qEl.value.trim().toLowerCase();
@@ -2541,6 +2606,9 @@ function open(row) {
     const dots = row.pins.map(pin => {
       const shown = mapHit || pin.title.toLowerCase().includes(q);
       return '<button type="button" class="pin" data-loot="'+pin.table+'" data-key="'+esc(pin.title)+'" data-title="'+esc(pin.title)+'" title="'+esc(pin.title)+'" style="left:'+pin.left+'%;top:'+pin.top+'%;background:'+colorOf(pin.title)+';display:'+(shown?"":"none")+'"></button>';
+    }).join("") + maybe.map(pin => {
+      const shown = mapHit || pin.title.toLowerCase().includes(q);
+      return '<button type="button" class="pin maybe" data-loot="'+pin.table+'" data-key="'+esc(pin.title)+'" data-title="'+esc(pin.title)+'" title="'+esc(pin.title)+'" style="left:'+pin.left+'%;top:'+pin.top+'%;background:transparent;border-color:'+colorOf(pin.title)+';display:'+(shown?"":"none")+'"></button>';
     }).join("");
     const entrances = row.entrances || [];
     const gateNudges = entrances.map((entrance, index) => entrances.slice(0, index).filter(other => Math.abs(other.left - entrance.left) < 4 && Math.abs(other.top - entrance.top) < 8).length);
@@ -2570,7 +2638,7 @@ function open(row) {
     const note = [
       regions.length ? "区域轮廓 "+regions.length+" 块，沿遮罩贴图边缘描出，并去掉落在纯色空地上、以及横跨空地的部分。" : "",
       entrances.length ? "入口 "+entrances.length+" 处：菱形是场景里的传送门，方块是撤离点。" : "这张地图的场景里没有写死的传送门或撤离点。",
-      row.pins.length ? "固定搜刮点 "+row.pins.length+" 处，点标记打开对应掉落。" : "这张地图的场景里没有写死的搜刮点坐标。",
+      (row.pins.length || maybe.length) ? "实心点 "+row.pins.length+" 处是场景里摆好的搜刮点。虚线圆 "+maybe.length+" 处是配置里另外写下的位置，一局不一定都会刷出来。点标记打开对应掉落。" : "这张地图的场景里没有写好的搜刮点坐标。",
       npcs.length ? "NPC "+npcs.length+" 处，蓝点是场景里写死的位置。能对上来源的点可以打开该条目。" : "这张地图的场景里没有写死的 NPC 坐标。",
       bosses.length ? "固定怪 "+bosses.length+" 处，红菱形是场景里写死、总会刷在原地的具名单位。"+(pathCount ? "虚线是同一只怪旁边分开的巡逻点。" : "") : "这张地图的场景里没有写死的具名怪物坐标。",
     ].filter(Boolean).join("");

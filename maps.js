@@ -1398,8 +1398,9 @@ function readMessagePack(view, at) {
 const SPAWN_POSITION = 2216820863;
 const SPAWN_CHILDREN = 321568097;
 const CHILD_POSITION = 1486226603;
+const LOOT_TABLE = 1762408745;
 
-function collectSpawns(def) {
+function authoringEntries(def) {
   const buf = fs.readFileSync(path.join(BUNDLE_DIR, def.camera));
   const info = bundleInfo(buf);
   const shared = info.nodes.find((n) => n.path.endsWith(".sharedAssets"));
@@ -1418,7 +1419,11 @@ function collectSpawns(def) {
     script = raw.slice(p + 4, p + 4 + scriptLen);
   }
   if (!script || script.slice(0, 4).toString("ascii") !== "HVAF") return [];
-  const entries = readMessagePack(script, script.readUInt16LE(6)).v[2] || [];
+  return readMessagePack(script, script.readUInt16LE(6)).v[2] || [];
+}
+
+function collectSpawns(def) {
+  const entries = authoringEntries(def);
   const frame = mapFrame(def);
   const points = [];
   for (const entry of entries) {
@@ -1480,6 +1485,29 @@ function patrolRoute(entry, frame) {
   return path.length >= 3 ? path : [];
 }
 
+function collectLootPoints(def) {
+  const entries = authoringEntries(def);
+  const frame = mapFrame(def);
+  const points = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    const table = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === LOOT_TABLE && Array.isArray(comp[1]) && typeof comp[1][0] === "number" && comp[1][0] > 0);
+    const pos = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === SPAWN_POSITION && Array.isArray(comp[1]) && comp[1].length === 2);
+    if (!table || !pos) continue;
+    const x = pos[1][0] / 65536;
+    const z = pos[1][1] / 65536;
+    const spot = toMapPercent(x, z, frame.offsetX, frame.offsetY, frame.sizeX, frame.sizeY);
+    if (spot.left < -1 || spot.left > 101 || spot.top < -1 || spot.top > 101) continue;
+    const left = Math.round(spot.left * 10) / 10;
+    const top = Math.round(spot.top * 10) / 10;
+    const key = table[1][0] + ":" + left + ":" + top;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push({ tableId: table[1][0], left, top });
+  }
+  return points;
+}
+
 function extractGameMaps(byKey) {
   const dir = path.join(__dirname, "maps");
   fs.mkdirSync(dir, { recursive: true });
@@ -1498,4 +1526,4 @@ function extractGameMaps(byKey) {
   return maps;
 }
 
-module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };
+module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, collectLootPoints, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };

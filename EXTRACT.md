@@ -169,7 +169,7 @@ flags：`2` 仅本职业可用，`4` 占位，`8` 忽略稀有度，`16` 配方�
 
 灰爪箱的中文来自本地化 key，不是物品名。`SmallAshenclawChest` = 小型灰爪箱，`AshenclawChest` = 灰爪箱，`GreaterAshenclawChest` = 大型灰爪箱。`ChestVeryLargeName` = 奥术保险箱，那是仓库升级物品，不要拿来当场景箱子的名字。
 
-场景里摆出来的对象名把 prefab 和大小对上了：`Small DV Chest = LootChest_High`，`Large DV Chest` / `Big DV Chest = LootChest_ExtraHigh`。`LootChest` 在场景里叫 Crafting Material Chest，是木箱，不是小型灰爪箱。普通 `MediumChest` 没有灰爪箱这句中文。`ExtraHigh2` 是同一档的银色箱子，页面写成「大型灰爪箱 2」，避免被父表火箭坠毁盖掉名字。没有单独的中文 key。
+场景里摆出来的对象名把 prefab 和大小对上了：`Small DV Chest = LootChest_High`，`Large DV Chest` / `Big DV Chest = LootChest_ExtraHigh`。`LootChest` 在场景里叫 Crafting Material Chest，是木箱，不是小型灰爪箱。普通 `MediumChest` 没有灰爪箱这句中文。`ExtraHigh2` 是同一档的银色箱子。游戏里就叫「灰爪箱」，用 `AshenclawChest`，不要写成「大型灰爪箱 2」。没有单独的中文 key。
 
 | 枚举名模式 | 场景对象 | 本地化 key |
 | --- | --- | --- |
@@ -284,14 +284,14 @@ top'  = 100 - 原来的 left
 
 图标仍只在 `extract.js` 里 `rotate180`，主循环看到已有文件就跳过。不要给图标加这个 90°。
 
-页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.2**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2244.110866**，后面括号里的 Steam build 25959928 是安装构建号。`1.0` 不是游戏版本：
+页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.3**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2244.110866**，后面括号里的 Steam build 25959928 是安装构建号。`1.0` 不是游戏版本：
 
 - `Vaultbreakers_Data/globalgamemanagers` 的 PlayerSettings 里，连续三个版本字符串是 `visionOSBundleVersion = 1.0`、`tvOSBundleVersion = 1.0`、`bundleVersion = 2.0.2244.110866`
 - `bundleVersion` 才是运行时 `Application.version`。页面上的游戏版本用 **`2.0.2244.110866`**
 - `1.0` 是旁边两个平台字段。Steam `appmanifest_4488770.acf` 的 `buildid` `25959928` 是安装构建号。exe 的 ProductVersion `6000.3.18f1` 是引擎版本
 - 页面上的游戏版本是 `2.0.2244.110866`，括号里保留 Steam build `25959928`
 
-作者和 v0.2 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `index.html`。
+作者和 v0.3 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `index.html`。
 
 ## 10. 更新时不要做的事
 
