@@ -2,11 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const { PNG } = require("pngjs");
 const { parseUnityFS, extractNode } = require("./unityfs");
-const { parseSerialized, readObject } = require("./serialized");
+const { parseSerialized, readObject, readValue, R } = require("./serialized");
 const { decodeTexture } = require("./dxt");
-const { extractGameMaps } = require("./maps");
+const { extractGameMaps, collectSpawns, MAP_DEFS } = require("./maps");
 const { collectCodex } = require("./codex");
-const { fillCreaturePortraits } = require("./render-creatures");
+const { fillCreaturePortraits, fillNpcPortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
 const GAME = path.resolve(ROOT, "..");
@@ -284,6 +284,245 @@ function pretty(id) {
 
 function loadBundle(name) {
   return parseUnityFS(fs.readFileSync(path.join(BUNDLE_DIR, name)));
+}
+
+const QUEST_NEED = {
+  3: "收集",
+  4: "携带撤离",
+  5: "制作",
+  13: "持有",
+  14: "交付",
+  20: "携带击杀",
+};
+
+function bundleForAddress(address) {
+  const buf = fs.readFileSync(path.join(GAME, "Vaultbreakers_Data", "StreamingAssets", "aa", "catalog.bin"));
+  const missing = 0xffffffff;
+  const u32 = (o) => buf.readUInt32LE(o);
+  const i32 = (o) => buf.readInt32LE(o);
+  const keysOffset = u32(8);
+  const count = i32(keysOffset - 4) / 4;
+  const cache = new Map();
+  const basic = (offset) => {
+    const len = i32(offset - 4);
+    if (len < 0 || len > 4000 || offset + len > buf.length) return null;
+    return buf.toString("utf8", offset, offset + len);
+  };
+  const encoded = (value, sep) => {
+    if (value === missing || value === missing - 1) return null;
+    if (cache.has(value)) return cache.get(value);
+    const offset = value & 0x3fffffff;
+    let result;
+    if ((value & 0x40000000) !== 0 && sep) {
+      const parts = [];
+      let at = offset;
+      for (let n = 0; n < 12; n++) {
+        const part = encoded(u32(at), null);
+        const next = u32(at + 4);
+        if (part) parts.push(part);
+        if (next === missing) break;
+        at = next;
+      }
+      result = parts.length === 1 ? parts[0] : parts.reverse().join(sep);
+    } else if ((value & 0x80000000) !== 0) {
+      const len = i32(offset - 4);
+      result = buf.toString("utf16le", offset, offset + len);
+    } else result = basic(offset);
+    cache.set(value, result);
+    return result;
+  };
+  const keyAt = (offset) => {
+    const typeOff = u32(offset);
+    const objOff = u32(offset + 4);
+    if (!typeOff || typeOff === missing || typeOff > buf.length) return null;
+    const cls = encoded(u32(typeOff + 4), ".");
+    if (!cls || !String(cls).endsWith("String")) return null;
+    if (objOff === missing) return "";
+    const sep = String.fromCharCode(buf[objOff + 4]);
+    return encoded(u32(objOff), sep && sep !== "\0" ? sep : null);
+  };
+  const bundleOf = (locOff, depth) => {
+    if (!locOff || locOff === missing || depth > 6) return "";
+    const bytes = i32(locOff - 4);
+    const n = bytes / 4;
+    if (!Number.isFinite(n) || n < 0 || n > 40) return "";
+    for (let j = 0; j < n; j++) {
+      const off = u32(locOff + j * 4);
+      const internalId = encoded(u32(off + 4), "/");
+      if (internalId && internalId.endsWith(".bundle")) return internalId.split(/[/\\]/).pop();
+      const nested = bundleOf(u32(off + 12), depth + 1);
+      if (nested) return nested;
+    }
+    return "";
+  };
+  for (let i = 0; i < count; i += 2) {
+    if (keyAt(u32(keysOffset + i * 4)) !== address) continue;
+    const file = bundleOf(u32(keysOffset + (i + 1) * 4), 0);
+    if (file && fs.existsSync(path.join(BUNDLE_DIR, file))) return file;
+  }
+  throw new Error("missing address " + address);
+}
+
+const SPAWN_ALIASES = {
+  PoisonSpiderlingElite: "ElitePoisonSpiderling",
+  DesertSpiderlingElite: "EliteDesertSpiderling",
+  MegaPebble: "MegaPebbleGolem",
+  EnragedForestGolem: "EliteEnragedForestGolem",
+  WanderingBear: "BearWandering",
+  Howly: "WerewolfMageHowly",
+  BanditDagger_Werewolf: "DaggerBanditWerewolf",
+  BanditCrossbow_Werewolf: "CrossbowBanditWerewolf",
+  EliteDesertSpiderling_SpiderMatriach: "SpiderMatriarch",
+  EliteDesertSpiderling_Named_SpiderMatriach: "SpiderMatriarch",
+  "Bahra (titan temp)": "Bahra",
+  EliteBarrelScrat_Named_Red: "BigKeg",
+  EliteNetterScrat_Named_Red: "BeastPoacher",
+  EliteEngineerScrat_Named_Yellow: "CheeseTank",
+  EliteEngineerScrat_Named_Blue: "BlueBlazer",
+  EliteNetterScrat_Named_Blue: "KingFisher",
+};
+
+function spawnUnit(name) {
+  const unit = name
+    .replace(/_\d+$/, "")
+    .replace(/_(\d+_)?Fast$/, "")
+    .replace(/_Sleeping$/, "")
+    .replace(/_NotRandomPath$/, "");
+  return unit.startsWith("Boss_") ? unit.slice(5) : unit;
+}
+
+function attachMonsterSpawns(sources, maps) {
+  const owners = new Map();
+  for (const source of sources) {
+    if (source.category !== "怪物") continue;
+    delete source.spawns;
+    const stem = String(source.asset || "").replace(/ConfigurationAsset$/, "");
+    if (!stem) continue;
+    const key = stem.toLowerCase();
+    if (!owners.has(key)) owners.set(key, []);
+    owners.get(key).push(source);
+  }
+  let linked = 0;
+  const matched = new Set();
+  for (const def of MAP_DEFS) {
+    if (!maps.some((map) => map.id === def.id)) continue;
+    const points = collectSpawns(def);
+    console.log("spawns", def.id, points.length);
+    for (const point of points) {
+      const unit = SPAWN_ALIASES[spawnUnit(point.unit)] || spawnUnit(point.unit);
+      const rows = owners.get(unit.toLowerCase());
+      if (!rows) continue;
+      for (const source of rows) {
+        if (!source.spawns) source.spawns = [];
+        const mark = { map: def.id, left: point.left, top: point.top };
+        if (point.path) mark.path = point.path;
+        source.spawns.push(mark);
+      }
+      matched.add(unit);
+      linked++;
+    }
+  }
+  console.log("spawn points linked", linked, "monsters", matched.size);
+}
+
+function charsOf(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && value.length && value.every((n) => typeof n === "number" && n >= 0 && n < 256)) return Buffer.from(value).toString("utf8");
+  return "";
+}
+
+function collectQuestNeeds() {
+  const sharedName = bundleForAddress("Assets/Core/Localization/Data/Tables/QuestStrings Shared Data.asset");
+  const zhName = bundleForAddress("QuestStrings_zh");
+  const shared = loadBundle(sharedName);
+  const sharedSf = parseSerialized(extractNode(shared, shared.nodes.find((n) => !n.path.includes("."))));
+  const keyToId = new Map();
+  for (const obj of sharedSf.objects) {
+    const typ = sharedSf.types[obj.typeId];
+    if (!typ || !typ.node || !typ.node.children.some((child) => child.name === "m_TableCollectionName")) continue;
+    let parsed;
+    try { parsed = readSharedStringKeys(sharedSf, obj); } catch { continue; }
+    if (parsed.collection !== "QuestStrings" && parsed.collection !== "DefaultStrings") continue;
+    for (const [key, id] of parsed.keyToId) keyToId.set(key, id);
+  }
+  const zh = loadBundle(zhName);
+  const zhSf = parseSerialized(extractNode(zh, zh.nodes.find((n) => !n.path.includes("."))));
+  const rawById = new Map();
+  for (const obj of zhSf.objects) {
+    let value;
+    try { value = readObject(zhSf, obj).value; } catch { continue; }
+    const tableName = utf8(value["#427"]);
+    if (tableName !== "QuestStrings_zh" && tableName !== "DefaultStrings_zh") continue;
+    for (const row of value.m_TableData || []) {
+      const text = utf8(row.m_Localized);
+      if (text) rawById.set(String(row.m_Id), text);
+    }
+  }
+  const byKey = new Map();
+  for (const [key, id] of keyToId) {
+    const text = rawById.get(String(id));
+    if (text) byKey.set(key, text);
+  }
+  const expand = (text, depth) => {
+    if (!text || depth > 4) return text || "";
+    return text.replace(/<ref>([A-Za-z0-9_]+)<\/ref>/g, (all, key) => {
+      const next = byKey.get(key);
+      return next ? expand(next, depth + 1) : all;
+    }).replace(/\{@[A-Za-z0-9_]+\.([A-Za-z0-9_]+)\}/g, (all, key) => {
+      const next = byKey.get(key);
+      return next ? expand(next, depth + 1) : all;
+    });
+  };
+  const questTitle = (id) => {
+    const keyId = keyToId.get(id + "-Name");
+    return keyId ? displayText(expand(rawById.get(String(keyId)) || "", 0)) : "";
+  };
+
+  const graph = loadBundle(bundleForAddress("QuestGraph.asset"));
+  const sf = parseSerialized(extractNode(graph, graph.nodes.find((n) => !n.path.includes("."))));
+  const obj = sf.objects.find((row) => {
+    const typ = sf.types[row.typeId];
+    return typ && typ.node && typ.node.children.some((child) => child.name === "references");
+  });
+  const root = sf.types[obj.typeId].node;
+  const byClass = new Map(sf.refTypes.map((typ) => [typ.className, typ]));
+  const reader = new R(sf.buf, sf.endian);
+  reader.o = sf.dataOffset + obj.byteStart;
+  for (const child of root.children) {
+    if (child.name === "references") break;
+    readValue(reader, child);
+  }
+  const refNode = root.children.find((child) => child.name === "references");
+  readValue(reader, refNode.children[0]);
+  const element = refNode.children[1].children[0].children[1];
+  const count = reader.i32();
+  const needs = new Map();
+  const seen = new Set();
+  for (let i = 0; i < count; i++) {
+    readValue(reader, element.children[0]);
+    const type = readValue(reader, element.children[1]);
+    const cls = charsOf(type.class);
+    const typ = byClass.get(cls);
+    if (!typ) throw new Error("unknown quest node " + cls);
+    const value = readValue(reader, typ.node);
+    if (cls !== "QuestNode") continue;
+    const questId = charsOf(value._questId);
+    const title = questTitle(questId);
+    if (!title || !/[\u4e00-\u9fff]/.test(title)) continue;
+    for (const objective of value.Objectives || []) {
+      const kind = QUEST_NEED[objective.Type];
+      const itemId = objective.ItemType | 0;
+      if (!kind || itemId <= 0) continue;
+      const amount = objective.Count > 0 ? objective.Count : 1;
+      const key = questId + "|" + itemId + "|" + objective.Type + "|" + amount;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!needs.has(itemId)) needs.set(itemId, []);
+      needs.get(itemId).push({ quest: title, kind: objective.Optional ? kind + "（可选）" : kind, count: amount });
+    }
+  }
+  for (const rows of needs.values()) rows.sort((a, b) => a.quest.localeCompare(b.quest, "zh-CN") || a.kind.localeCompare(b.kind, "zh-CN"));
+  return needs;
 }
 
 function main() {
@@ -1098,6 +1337,14 @@ function main() {
   );
   const creatureShots = fillCreaturePortraits(sources);
   console.log("creature fronts", creatureShots);
+  const npcShots = fillNpcPortraits();
+  let npcIcons = 0;
+  for (const source of sources) {
+    if (source.icon || !npcShots.assets[source.asset]) continue;
+    source.icon = npcShots.assets[source.asset];
+    npcIcons++;
+  }
+  console.log("npc fronts", Object.keys(npcShots.tokens).length, "source icons", npcIcons);
   for (const source of sources) {
     source.refs = source.refs.map((ref) => ({
       ...ref,
@@ -1243,6 +1490,7 @@ function main() {
           token: actor.token,
           fallback: actor.fallback || "",
           asset,
+          icon: (source && source.icon) || npcShots.tokens[actor.token] || "",
           left: actor.left,
           top: actor.top,
           path: (actor.path || []).map((point) => ({ left: point.left, top: point.top })),
@@ -1278,6 +1526,8 @@ function main() {
     };
   });
 
+  attachMonsterSpawns(sources, gameMaps);
+
   console.log("reading characters, skills, gear");
   const codex = collectCodex(sf, readObject, {
     asString,
@@ -1297,6 +1547,16 @@ function main() {
   });
   console.log("characters", codex.characters.length, "skills", codex.skills.length, "gear", codex.gear.length);
 
+  const questNeeds = collectQuestNeeds();
+  let questItems = 0;
+  for (const item of itemList) {
+    const rows = questNeeds.get(item.id);
+    if (!rows) continue;
+    item.needs = rows;
+    questItems++;
+  }
+  console.log("quest items", questItems);
+
   const usedIcons = new Set();
   for (const table of dropTables) for (const e of table.entries) if (e.itemIcon) usedIcons.add(e.itemIcon);
   for (const source of sources) if (source.icon) usedIcons.add(source.icon);
@@ -1306,7 +1566,7 @@ function main() {
     generatedAt: new Date().toISOString(),
     dropTables: dropTables.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
     sources: sources.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
-    items: itemList.filter((it) => it.icon || dropTables.some((t) => t.entries.some((e) => e.item === it.id))).sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
+    items: itemList.filter((it) => it.needs || it.icon || dropTables.some((t) => t.entries.some((e) => e.item === it.id))).sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
     characters: codex.characters,
     skills: codex.skills,
     gear: codex.gear,
@@ -1366,6 +1626,7 @@ function writeHtml(db) {
   section { padding:18px 22px 40px; overflow:auto; min-height:0; overflow-anchor:none; }
   .hero { display:flex; gap:14px; align-items:center; margin-bottom:14px; }
   table { width:100%; border-collapse:collapse; }
+  h3 { margin:16px 0 8px; font-size:16px; }
   th, td { border-bottom:1px solid var(--line); padding:8px 6px; vertical-align:middle; text-align:left; }
   th { color:var(--muted); font-weight:600; }
   .bar { height:8px; background:#2a3144; border-radius:99px; overflow:hidden; min-width:70px; }
@@ -1388,6 +1649,11 @@ function writeHtml(db) {
   .mapstage svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .region-label { position:absolute; z-index:1; transform:translate(-50%,-50%); font-size:13px; font-weight:700; color:#fff; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
   .pin { position:absolute; z-index:2; width:12px; height:12px; margin:0; padding:0; border:1px solid #111; border-radius:50%; transform:translate(-50%,-50%); cursor:pointer; }
+  .spawn-map { position:relative; max-width:560px; margin:8px 0 4px; }
+  .spawn-map img { width:100%; display:block; }
+  .spawn-map svg { position:absolute; inset:0; width:100%; height:100%; }
+  .spawn-map .route { fill:none; stroke:#f2d27a; stroke-width:0.45; stroke-dasharray:1.2 0.7; stroke-linecap:round; stroke-linejoin:round; }
+  .spawn-map i { position:absolute; z-index:1; width:8px; height:8px; border:1px solid #1a120c; border-radius:50%; background:#e74c3c; transform:translate(-50%,-50%); }
   .pin:hover { outline:2px solid #fff; z-index:2; }
   .gate { position:absolute; z-index:4; width:12px; height:12px; margin:0; padding:0; border:2px solid #111; background:#f7dc6f; transform:translate(-50%,-50%) rotate(45deg); }
   .gate.extract { background:#e07a7a; border-radius:2px; transform:translate(-50%,-50%); }
@@ -1403,6 +1669,8 @@ function writeHtml(db) {
   .bulk { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); }
   .legend { display:flex; flex-wrap:wrap; gap:6px; }
   .region-filter, .pin-filter, .gate-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
+  .npc-filter { display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:3px 8px 3px 3px; }
+  .npc-filter img { width:36px; height:48px; object-fit:contain; background:#0e1118; border-radius:6px; }
   .region-filter.on, .pin-filter.on, .gate-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
   .dps h2 { margin:0 0 8px; font-size:20px; }
@@ -1450,7 +1718,7 @@ function writeHtml(db) {
   <div>
     <h1>龙窟破坏者掉落表</h1>
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.1 · 对应游戏版本 2.0.2137.110314（Steam build 25803617） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p class="meta">作者 elmagnifico · 版本 v0.2 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
@@ -2000,7 +2268,7 @@ function filtered() {
   else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
-  else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")).toLowerCase().includes(q)));
+  else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")+" "+(it.needs||[]).map(n => n.quest+" "+n.kind).join(" ")).toLowerCase().includes(q)));
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
 function shown(text) {
@@ -2023,7 +2291,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? (row.place || row.refs.map(r=>shown(r.title)).join("、")) : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? (row.role || row.origin || "") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : ((row.places||[]).join("、"));
+    const sub = mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? (row.role || row.origin || "") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : ""].filter(Boolean).join(" · ");
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2034,6 +2302,31 @@ function renderList() {
     open(filtered()[Number(btn.dataset.i)]);
     pushView();
   });
+}
+function spawnSummary(row) {
+  const spawns = row.spawns || [];
+  if (!spawns.length) return "";
+  const counts = new Map();
+  for (const point of spawns) counts.set(point.map, (counts.get(point.map) || 0) + 1);
+  return [...counts].map(([id, count]) => {
+    const map = (db.maps || []).find(item => item.id === id);
+    return (map ? map.title : id) + " " + count + " 处";
+  }).join("、");
+}
+function spawnMaps(row) {
+  const spawns = row.spawns || [];
+  if (!spawns.length) return "";
+  const ids = [...new Set(spawns.map(point => point.map))];
+  return ids.map(id => {
+    const map = (db.maps || []).find(item => item.id === id);
+    if (!map || !map.image) return "";
+    const here = spawns.filter(point => point.map === id);
+    const dots = here.map(point => '<i style="left:'+point.left+'%;top:'+point.top+'%"></i>').join("");
+    const routes = here.filter(point => (point.path || []).length >= 2).map(point => '<polyline class="route" points="'+point.path.map(p => p.left+","+p.top).join(" ")+'"></polyline>').join("");
+    const svg = routes ? '<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+routes+'</svg>' : "";
+    const routeNote = routes ? " 虚线是巡逻路线。" : "";
+    return '<div class="spawn-map"><img alt="'+esc(map.title)+'" src="'+map.image+'">'+svg+dots+'</div><p class="muted">'+esc(map.title)+'，可能刷新 '+here.length+' 处。一局里不一定每处都会出现。'+routeNote+'</p>';
+  }).join("");
 }
 function portraitOf(table) {
   if (!table) return "";
@@ -2124,7 +2417,8 @@ function open(row) {
         + '<table><thead><tr><th>掉落</th><th>数量</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+body+'</tbody></table>';
     }).join("");
     const where = [row.place && ("地点："+row.place), row.look && row.look !== row.title && !String(row.title).includes(row.look) && ("样子："+row.look)].filter(Boolean).join(" · ");
-    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, sourceLabel(row))+'<div><h2>'+sourceLabel(row).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + blocks;
+    const spots = spawnMaps(row);
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, sourceLabel(row))+'<div><h2>'+sourceLabel(row).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + (spots ? '<h3>可能刷新</h3>'+spots : '') + blocks;
     bindJumps(detailEl);
   } else if (mode === "items") {
     const from = [];
@@ -2141,8 +2435,13 @@ function open(row) {
     }
     from.sort((a, b) => b.drop.chance - a.drop.chance);
     const places = (row.places||[]).join("、");
+    const needs = row.needs || [];
+    const needTable = '<h3>任务需要</h3><table><thead><tr><th>任务</th><th>要求</th><th>数量</th></tr></thead><tbody>'
+      + (needs.length ? needs.map(need => '<tr><td>'+esc(need.quest)+'</td><td>'+esc(need.kind)+'</td><td>'+need.count+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有任务需要这个</td></tr>')
+      + '</tbody></table>';
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
-      + '<table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
+      + needTable
+      + '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
       + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
       + '</tbody></table>';
     bindJumps(detailEl);
@@ -2226,7 +2525,11 @@ function open(row) {
     const bosses = row.bosses || [];
     const npcTitles = [...new Set(npcs.map(actor => actor.title))];
     const bossTitles = [...new Set(bosses.map(actor => actor.title))];
-    const npcLegend = npcTitles.map(title => '<button type="button" class="tag npc-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:#5dade2"></span>'+esc(title)+'</button>').join("");
+    const npcLegend = npcTitles.map(title => {
+      const actor = npcs.find(item => item.title === title);
+      const face = actor && actor.icon ? '<img alt="" src="'+esc(actor.icon)+'">' : '<span class="dot" style="background:#5dade2"></span>';
+      return '<button type="button" class="tag npc-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'">'+face+esc(title)+'</button>';
+    }).join("");
     const bossLegend = bossTitles.map(title => '<button type="button" class="tag boss-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:#e74c3c"></span>'+esc(title)+'</button>').join("");
     const shapes = regions.map((region, index) => {
       const color = regionColors[index % regionColors.length];

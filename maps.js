@@ -1313,6 +1313,173 @@ function collectActors(def) {
   return { npcs: dedupe(npcs), bosses: dedupe(bosses) };
 }
 
+function readMessagePack(view, at) {
+  const b = view[at];
+  if (b <= 0x7f) return { v: b, at: at + 1 };
+  if (b >= 0xe0) return { v: b - 256, at: at + 1 };
+  if ((b & 0xf0) === 0x80) {
+    const n = b & 0x0f;
+    const obj = {};
+    at++;
+    for (let i = 0; i < n; i++) {
+      const key = readMessagePack(view, at);
+      at = key.at;
+      const val = readMessagePack(view, at);
+      at = val.at;
+      obj[String(key.v)] = val.v;
+    }
+    return { v: obj, at };
+  }
+  if ((b & 0xf0) === 0x90) {
+    const n = b & 0x0f;
+    const arr = [];
+    at++;
+    for (let i = 0; i < n; i++) {
+      const val = readMessagePack(view, at);
+      at = val.at;
+      arr.push(val.v);
+    }
+    return { v: arr, at };
+  }
+  if ((b & 0xe0) === 0xa0) {
+    const n = b & 0x1f;
+    return { v: view.toString("utf8", at + 1, at + 1 + n), at: at + 1 + n };
+  }
+  if (b === 0xc0) return { v: null, at: at + 1 };
+  if (b === 0xc2) return { v: false, at: at + 1 };
+  if (b === 0xc3) return { v: true, at: at + 1 };
+  if (b === 0xc4) { const n = view[at + 1]; return { v: null, at: at + 2 + n }; }
+  if (b === 0xc5) { const n = view.readUInt16BE(at + 1); return { v: null, at: at + 3 + n }; }
+  if (b === 0xc6) { const n = view.readUInt32BE(at + 1); return { v: null, at: at + 5 + n }; }
+  if (b === 0xca) return { v: view.readFloatBE(at + 1), at: at + 5 };
+  if (b === 0xcb) return { v: view.readDoubleBE(at + 1), at: at + 9 };
+  if (b === 0xcc) return { v: view[at + 1], at: at + 2 };
+  if (b === 0xcd) return { v: view.readUInt16BE(at + 1), at: at + 3 };
+  if (b === 0xce) return { v: view.readUInt32BE(at + 1), at: at + 5 };
+  if (b === 0xcf) return { v: view.readBigUInt64BE(at + 1).toString(), at: at + 9 };
+  if (b === 0xd0) return { v: view.readInt8(at + 1), at: at + 2 };
+  if (b === 0xd1) return { v: view.readInt16BE(at + 1), at: at + 3 };
+  if (b === 0xd2) return { v: view.readInt32BE(at + 1), at: at + 5 };
+  if (b === 0xd3) return { v: view.readBigInt64BE(at + 1).toString(), at: at + 9 };
+  if (b === 0xd9) { const n = view[at + 1]; return { v: view.toString("utf8", at + 2, at + 2 + n), at: at + 2 + n }; }
+  if (b === 0xda) { const n = view.readUInt16BE(at + 1); return { v: view.toString("utf8", at + 3, at + 3 + n), at: at + 3 + n }; }
+  if (b === 0xdb) { const n = view.readUInt32BE(at + 1); return { v: view.toString("utf8", at + 5, at + 5 + n), at: at + 5 + n }; }
+  if (b === 0xdc) {
+    const n = view.readUInt16BE(at + 1);
+    const arr = [];
+    at += 3;
+    for (let i = 0; i < n; i++) { const val = readMessagePack(view, at); at = val.at; arr.push(val.v); }
+    return { v: arr, at };
+  }
+  if (b === 0xdd) {
+    const n = view.readUInt32BE(at + 1);
+    const arr = [];
+    at += 5;
+    for (let i = 0; i < n; i++) { const val = readMessagePack(view, at); at = val.at; arr.push(val.v); }
+    return { v: arr, at };
+  }
+  if (b === 0xde) {
+    const n = view.readUInt16BE(at + 1);
+    const obj = {};
+    at += 3;
+    for (let i = 0; i < n; i++) { const key = readMessagePack(view, at); at = key.at; const val = readMessagePack(view, at); at = val.at; obj[String(key.v)] = val.v; }
+    return { v: obj, at };
+  }
+  if (b === 0xdf) {
+    const n = view.readUInt32BE(at + 1);
+    const obj = {};
+    at += 5;
+    for (let i = 0; i < n; i++) { const key = readMessagePack(view, at); at = key.at; const val = readMessagePack(view, at); at = val.at; obj[String(key.v)] = val.v; }
+    return { v: obj, at };
+  }
+  throw new Error("bad message pack " + b.toString(16) + " at " + at);
+}
+
+const SPAWN_POSITION = 2216820863;
+const SPAWN_CHILDREN = 321568097;
+const CHILD_POSITION = 1486226603;
+
+function collectSpawns(def) {
+  const buf = fs.readFileSync(path.join(BUNDLE_DIR, def.camera));
+  const info = bundleInfo(buf);
+  const shared = info.nodes.find((n) => n.path.endsWith(".sharedAssets"));
+  const data = extractRange(buf, info, shared.offset, shared.size);
+  const sf = parseSerialized(data);
+  let script = null;
+  for (const obj of sf.objects) {
+    if (!sf.types[obj.typeId] || sf.types[obj.typeId].classId !== 49) continue;
+    const raw = data.slice(sf.dataOffset + obj.byteStart, sf.dataOffset + obj.byteStart + obj.byteSize);
+    const nameLen = raw.readInt32LE(0);
+    if (nameLen < 1 || nameLen > 80) continue;
+    const name = raw.toString("utf8", 4, 4 + nameLen);
+    if (!name.endsWith("_Authoring")) continue;
+    const p = (4 + nameLen + 3) & ~3;
+    const scriptLen = raw.readInt32LE(p);
+    script = raw.slice(p + 4, p + 4 + scriptLen);
+  }
+  if (!script || script.slice(0, 4).toString("ascii") !== "HVAF") return [];
+  const entries = readMessagePack(script, script.readUInt16LE(6)).v[2] || [];
+  const frame = mapFrame(def);
+  const points = [];
+  for (const entry of entries) {
+    const name = String(entry[0] || "");
+    if (!name.startsWith("Authored_Spawn_")) continue;
+    const pos = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === SPAWN_POSITION && Array.isArray(comp[1]) && comp[1].length === 2);
+    if (!pos) continue;
+    const x = pos[1][0] / 65536;
+    const z = pos[1][1] / 65536;
+    const spot = toMapPercent(x, z, frame.offsetX, frame.offsetY, frame.sizeX, frame.sizeY);
+    if (spot.left < -1 || spot.left > 101 || spot.top < -1 || spot.top > 101) continue;
+    const point = {
+      unit: name.replace(/^Authored_Spawn_/, ""),
+      left: Math.round(spot.left * 10) / 10,
+      top: Math.round(spot.top * 10) / 10,
+    };
+    const route = patrolRoute(entry, frame);
+    if (route.length >= 3) point.path = route;
+    points.push(point);
+  }
+  return points;
+}
+
+function fixedPair(node) {
+  const flat = [];
+  const walk = (value) => {
+    if (typeof value === "number") flat.push(value / 65536);
+    else if (Array.isArray(value)) value.forEach(walk);
+  };
+  walk(node);
+  return flat.length >= 2 ? [flat[0], flat[1]] : null;
+}
+
+function patrolRoute(entry, frame) {
+  const nest = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === SPAWN_CHILDREN);
+  const kids = nest && nest[1] && nest[1][4];
+  if (!Array.isArray(kids)) return [];
+  const world = [];
+  for (const kid of kids) {
+    const pos = (kid || []).find((comp) => Array.isArray(comp) && comp[0] === CHILD_POSITION);
+    const pair = pos && fixedPair(pos[1]);
+    if (pair) world.push(pair);
+  }
+  if (world.length < 3) return [];
+  const xs = world.map((pair) => pair[0]);
+  const zs = world.map((pair) => pair[1]);
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+  if (span < 8) return [];
+  const path = [];
+  for (const [x, z] of world) {
+    const spot = toMapPercent(x, z, frame.offsetX, frame.offsetY, frame.sizeX, frame.sizeY);
+    if (spot.left < -2 || spot.left > 102 || spot.top < -2 || spot.top > 102) continue;
+    const left = Math.round(spot.left * 10) / 10;
+    const top = Math.round(spot.top * 10) / 10;
+    const prev = path[path.length - 1];
+    if (prev && prev.left === left && prev.top === top) continue;
+    path.push({ left, top });
+  }
+  return path.length >= 3 ? path : [];
+}
+
 function extractGameMaps(byKey) {
   const dir = path.join(__dirname, "maps");
   fs.mkdirSync(dir, { recursive: true });
@@ -1331,4 +1498,4 @@ function extractGameMaps(byKey) {
   return maps;
 }
 
-module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };
+module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };

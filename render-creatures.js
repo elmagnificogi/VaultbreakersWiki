@@ -41,11 +41,8 @@ function iconFile(asset) {
 
 let indexCache = null;
 
-function buildIndex() {
-  if (indexCache) return indexCache;
+function buildCabMap() {
   const cabToFile = new Map();
-  const visualToFile = new Map();
-  const meshToFile = new Map();
   const files = fs.readdirSync(BUNDLE_DIR).filter((f) => f.endsWith(".bundle"));
   for (const file of files) {
     const fp = path.join(BUNDLE_DIR, file);
@@ -60,8 +57,22 @@ function buildIndex() {
       const id = (node.path.match(/CAB-[0-9a-f]+/i) || [])[0];
       if (id && !cabToFile.has(id)) cabToFile.set(id, file);
     }
+  }
+  return cabToFile;
+}
+
+function buildIndex() {
+  if (indexCache) return indexCache;
+  const cabToFile = buildCabMap();
+  const visualToFile = new Map();
+  const meshToFile = new Map();
+  const files = fs.readdirSync(BUNDLE_DIR).filter((f) => f.endsWith(".bundle"));
+  for (const file of files) {
+    const fp = path.join(BUNDLE_DIR, file);
+    const st = fs.statSync(fp);
     if (st.size > 40 * 1024 * 1024) continue;
     let buf;
+    let info;
     try { buf = fs.readFileSync(fp); info = bundleInfo(buf); } catch { continue; }
     for (const node of info.nodes) {
       if (node.path.endsWith(".resS") || node.size > 12 * 1024 * 1024 || node.size < 32) continue;
@@ -131,19 +142,25 @@ function textureFromMaterial(matSf, matValue, index) {
     if (Array.isArray(v)) { for (const x of v) walk(x); return; }
     const slot = asString(v["#155"]) || asString(v.first) || "";
     const tex = (v.m_Texture) || (v.SInt16 && v.SInt16.m_Texture);
-    if (tex && tex.fileId && /maintex|basemap|basecolormap|albedo/i.test(slot)) wanted.push({ slot, fileId: tex.fileId, pathId: String(tex.pathId) });
+    if (tex && tex.pathId && tex.pathId !== "0" && /maintex|basemap|basecolormap|albedo/i.test(slot)) wanted.push({ slot, fileId: tex.fileId || 0, pathId: String(tex.pathId) });
     for (const x of Object.values(v)) walk(x);
   }
   walk(matValue.m_SavedProperties || matValue);
   wanted.sort((a, b) => (/base|albedo/i.test(a.slot) ? -1 : 1));
   const hit = wanted[0];
   if (!hit) return null;
-  const cab = resolveExternal(matSf, hit.fileId);
-  if (!cab) return null;
-  const file = index.cabToFile.get(cab);
-  if (!file) return null;
-  const loaded = loadSerialized(file, cab);
-  if (!loaded) return null;
+  let loaded = { sf: matSf, resS: null };
+  if (hit.fileId) {
+    const cab = resolveExternal(matSf, hit.fileId);
+    if (!cab) return null;
+    const file = index.cabToFile.get(cab);
+    if (!file) return null;
+    loaded = loadSerialized(file, cab);
+    if (!loaded) return null;
+  } else {
+    const cached = [...bundleCache.values()].find((item) => item.sf === matSf);
+    loaded = { sf: matSf, resS: cached ? cached.resS : Buffer.alloc(0) };
+  }
   for (const obj of loaded.sf.objects) {
     if (hit.pathId && String(obj.pathId) !== hit.pathId) continue;
     const value = readObjectSafe(loaded.sf, obj);
@@ -255,6 +272,28 @@ function extentsOf(geo) {
     }
   }
   return [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+}
+
+function isGroundDisc(ext) {
+  const wide = Math.max(ext[0], ext[1]);
+  const flat = ext[2] < wide * 0.22;
+  const round = Math.min(ext[0], ext[1]) > wide * 0.72;
+  return flat && round && wide > 0.2;
+}
+
+function cullPortrait(parts) {
+  const info = [];
+  for (const part of parts) {
+    const ext = extentsOf(part.geo);
+    if (isGroundDisc(ext)) continue;
+    const span = Math.max(ext[0], ext[1], ext[2]);
+    const thin = Math.min(ext[0], ext[1], ext[2]);
+    const aura = part.geo.count < 800 && thin > span * 0.7;
+    if (!aura) info.push({ part, ext, span, verts: part.geo.count });
+  }
+  if (!info.length) return cullParts(parts);
+  const body = info.slice().sort((a, b) => b.verts - a.verts)[0];
+  return info.filter((item) => item === body || (item.verts > 80 && item.span <= body.span * 1.35 && item.span >= body.span * 0.12)).map((item) => item.part);
 }
 
 function cullParts(parts) {
@@ -425,7 +464,7 @@ function textureFor(sf, materialRef, index) {
   return textureFromMaterial(matSf, matValue, index);
 }
 
-function renderVisual(name, index) {
+function renderVisual(name, index, options) {
   const file = index.visualToFile.get(name + "_Visual");
   if (!file) return { error: "no visual" };
   const loaded = loadSerialized(file);
@@ -454,7 +493,7 @@ function renderVisual(name, index) {
     }
   }
   if (!parts.length) return { error: "empty" };
-  const kept = cullParts(parts);
+  const kept = options && options.dropDiscs ? cullPortrait(parts) : cullParts(parts);
   const png = paint(kept);
   if (!png) return { error: "blank" };
   return { png, parts: parts.length, textured: parts.filter((p) => p.tex).length };
@@ -495,7 +534,143 @@ function fillCreaturePortraits(sources) {
   return made;
 }
 
-module.exports = { fillCreaturePortraits, renderVisual, buildIndex, iconFile };
+const NPC_VISUALS = {
+  Priestess: "AdvancedNPC_PriestessInMatch",
+  Vulkaryn: "AdvancedNPC_VulkarynInMatch",
+  Goldbelly: "AdvancedNPC_GoldBellyInMatch",
+  Silverhook: "AdvancedNpc_SilverhookSamQuartermaster",
+  Lanathar: "AdvancedNPC_LanatharInMatch",
+  Vexxie: "AdvancedNPC_VexxieInMatch",
+  Doctor: "AdvancedNPC_DoctorInMatch",
+  Aetos: "AdvancedNPC_AetosInMatch",
+  Gondrak: "AdvancedNPC_GondrakInMatch",
+  Diona: "AdvancedNpc_Diona",
+  Ruffles: "AdvancedNpc_Ruffles",
+  Milloween: "AdvancedNpc_Milloween",
+  Drakthor: "AdvancedNpc_Drakthor",
+  Ryzor: "AdvancedNpc_RyzorPotionVendor",
+  HumanShopkeeper: "HumanShopkeeper_Named",
+};
+
+const NPC_ASSETS = {
+  AdvancedNPC_DoctorConfigurationAsset: "Doctor",
+  AdvancedNpc_RyzorPotionVendorConfigurationAsset: "Ryzor",
+  AdvancedNpc_VulkarynItemVendorConfigurationAsset: "Vulkaryn",
+  HumanShopkeeper_NamedConfigurationAsset: "HumanShopkeeper",
+  AdvancedNpc_DionaConfigurationAsset: "Diona",
+  AdvancedNpc_GondrakBlacksmithConfigurationAsset: "Gondrak",
+};
+
+function catalogBundles(names) {
+  const catalog = path.resolve(BUNDLE_DIR, "../catalog.bin");
+  const buf = fs.readFileSync(catalog);
+  const U32 = 0xffffffff;
+  const u32 = (o) => buf.readUInt32LE(o);
+  const i32 = (o) => buf.readInt32LE(o);
+  const keysOffset = u32(8);
+  const count = i32(keysOffset - 4) / 4;
+  const cache = new Map();
+  function readBasic(offset) {
+    const len = i32(offset - 4);
+    if (len < 0 || len > 4000 || offset + len > buf.length) return null;
+    return buf.toString("utf8", offset, offset + len);
+  }
+  function readEncoded(encoded, sep) {
+    if (encoded === U32 || encoded === U32 - 1) return null;
+    if (cache.has(encoded)) return cache.get(encoded);
+    const offset = encoded & 0x3fffffff;
+    let result;
+    if ((encoded & 0x40000000) !== 0 && sep) {
+      const parts = [];
+      let at = offset;
+      for (let n = 0; n < 12; n++) {
+        const part = readEncoded(u32(at), null);
+        const next = u32(at + 4);
+        if (part) parts.push(part);
+        if (next === U32) break;
+        at = next;
+      }
+      result = parts.length === 1 ? parts[0] : parts.reverse().join(sep);
+    } else if ((encoded & 0x80000000) !== 0) {
+      const len = i32(offset - 4);
+      result = buf.toString("utf16le", offset, offset + len);
+    } else result = readBasic(offset);
+    cache.set(encoded, result);
+    return result;
+  }
+  function decodeKey(offset) {
+    const typeOff = u32(offset);
+    const objOff = u32(offset + 4);
+    if (!typeOff || typeOff === U32 || typeOff > buf.length) return null;
+    const cls = readEncoded(u32(typeOff + 4), ".");
+    if (!cls || !String(cls).endsWith("String")) return null;
+    if (objOff === U32) return "";
+    const sep = String.fromCharCode(buf[objOff + 4]);
+    return readEncoded(u32(objOff), sep && sep !== "\0" ? sep : null);
+  }
+  function bundleOf(locOff, depth) {
+    if (!locOff || locOff === U32 || depth > 4) return "";
+    const n = i32(locOff - 4) / 4;
+    for (let j = 0; j < n && j < 6; j++) {
+      const off = u32(locOff + j * 4);
+      const internalId = readEncoded(u32(off + 4), "/");
+      if (internalId && internalId.endsWith(".bundle")) return internalId.split(/[/\\]/).pop();
+      const nested = bundleOf(u32(off + 12), depth + 1);
+      if (nested) return nested;
+    }
+    return "";
+  }
+  const wanted = new Set(names.map((name) => name + "_Visual.prefab"));
+  const found = new Map();
+  for (let i = 0; i < count; i += 2) {
+    const key = decodeKey(u32(keysOffset + i * 4));
+    if (!wanted.has(key)) continue;
+    const file = bundleOf(u32(keysOffset + (i + 1) * 4), 0);
+    if (file) found.set(key.replace(/_Visual\.prefab$/, ""), file);
+  }
+  return found;
+}
+
+function fillNpcPortraits() {
+  const iconDir = path.join(ROOT, "icons");
+  fs.mkdirSync(iconDir, { recursive: true });
+  const names = [...new Set(Object.values(NPC_VISUALS))];
+  const pending = names.filter((name) => !fs.existsSync(path.join(iconDir, iconFile(name))));
+  const files = new Map();
+  if (pending.length) {
+    console.log("rendering npc fronts", pending.length);
+    const bundles = catalogBundles(pending);
+    console.log("indexing mesh bundles");
+    const index = { cabToFile: buildCabMap(), visualToFile: new Map(), meshToFile: new Map() };
+    for (const name of pending) {
+      const bundle = bundles.get(name);
+      if (!bundle) {
+        console.log(" skip", name, "no bundle");
+        continue;
+      }
+      index.visualToFile.set(name + "_Visual", bundle);
+      let result;
+      try { result = renderVisual(name, index, { dropDiscs: true }); } catch (error) { result = { error: error.message }; }
+      if (!result.png) {
+        console.log(" skip", name, result.error || "");
+        continue;
+      }
+      fs.writeFileSync(path.join(iconDir, iconFile(name)), PNG.sync.write(result.png));
+      console.log(" npc", name, "parts", result.parts, "textured", result.textured);
+    }
+  }
+  for (const name of names) {
+    const file = iconFile(name);
+    if (fs.existsSync(path.join(iconDir, file))) files.set(name, "icons/" + file);
+  }
+  const tokens = {};
+  for (const [token, name] of Object.entries(NPC_VISUALS)) if (files.has(name)) tokens[token] = files.get(name);
+  const assets = {};
+  for (const [asset, token] of Object.entries(NPC_ASSETS)) if (tokens[token]) assets[asset] = tokens[token];
+  return { tokens, assets };
+}
+
+module.exports = { fillCreaturePortraits, fillNpcPortraits, renderVisual, buildIndex, iconFile };
 
 if (require.main === module) {
   const names = process.argv.slice(2);

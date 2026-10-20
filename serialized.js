@@ -341,4 +341,4 @@ function readObject(sf, obj) {
   return { value, consumed: r.o - (sf.dataOffset + obj.byteStart), size: obj.byteSize, endOver: r.o - end };
 }
 
-module.exports = { parseSerialized, readObject, readValue };
+module.exports = { parseSerialized, readObject, readValue, R };
