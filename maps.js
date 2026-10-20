@@ -1508,6 +1508,74 @@ function collectLootPoints(def) {
   return points;
 }
 
+function nestedPair(node) {
+  if (!Array.isArray(node) || node.length < 2) return null;
+  const x = Array.isArray(node[0]) ? node[0][0] : node[0];
+  const z = Array.isArray(node[1]) ? node[1][0] : node[1];
+  if (typeof x !== "number" || typeof z !== "number") return null;
+  return [x / 65536, z / 65536];
+}
+
+function mapSpot(frame, x, z) {
+  const spot = toMapPercent(x, z, frame.offsetX, frame.offsetY, frame.sizeX, frame.sizeY);
+  if (spot.left < -1 || spot.left > 101 || spot.top < -1 || spot.top > 101) return null;
+  return { left: Math.round(spot.left * 10) / 10, top: Math.round(spot.top * 10) / 10 };
+}
+
+function collectTeleportLinks(def, byKey) {
+  const shrineTitle = (byKey && byKey.get("BuildingUpgradeLibraryTier2Name")) || "";
+  const balloonTitle = (byKey && byKey.get("MapName_BalloonPad")) || "";
+  const frame = mapFrame(def);
+  const shrines = [];
+  const balloons = [];
+  for (const entry of authoringEntries(def)) {
+    const name = String(entry[0] || "");
+    const shrine = name.startsWith("Authored_POI_TeleportShrine");
+    const balloon = /^Authored_BalloonTeleport(?:_\d+)?$/.test(name);
+    if (!shrine && !balloon) continue;
+    const pos = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === SPAWN_POSITION && Array.isArray(comp[1]) && comp[1].length === 2);
+    const link = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === (shrine ? 1028502046 : 4272233776));
+    if (!pos || !link) continue;
+    const here = mapSpot(frame, pos[1][0] / 65536, pos[1][1] / 65536);
+    const targetPair = nestedPair(link[1] && link[1][0]);
+    const target = targetPair && mapSpot(frame, targetPair[0], targetPair[1]);
+    if (!here || !target) continue;
+    if (shrine) shrines.push({ id: link[1][1], here, target });
+    else balloons.push({ here, target });
+  }
+  const links = [];
+  const seenShrine = new Set();
+  for (const point of shrines) {
+    if (seenShrine.has(point)) continue;
+    const other = shrines.find((item) => item !== point && item.id === point.id);
+    if (!other || !shrineTitle) continue;
+    seenShrine.add(point);
+    seenShrine.add(other);
+    links.push({ title: shrineTitle, a: point.here, b: other.here });
+  }
+  const seenBalloon = new Set();
+  for (const point of balloons) {
+    if (seenBalloon.has(point) || !balloonTitle) continue;
+    let other = null;
+    let best = 4;
+    for (const candidate of balloons) {
+      if (candidate === point || seenBalloon.has(candidate)) continue;
+      const distance = Math.hypot(point.target.left - candidate.here.left, point.target.top - candidate.here.top);
+      if (distance < best) {
+        other = candidate;
+        best = distance;
+      }
+    }
+    if (!other) continue;
+    const back = Math.hypot(other.target.left - point.here.left, other.target.top - point.here.top);
+    if (back > 4) continue;
+    seenBalloon.add(point);
+    seenBalloon.add(other);
+    links.push({ title: balloonTitle, a: point.here, b: other.here });
+  }
+  return links;
+}
+
 function extractGameMaps(byKey) {
   const dir = path.join(__dirname, "maps");
   fs.mkdirSync(dir, { recursive: true });
@@ -1520,10 +1588,11 @@ function extractGameMaps(byKey) {
     const regions = collectRegions(def);
     const entrances = collectEntrances(def);
     const actors = collectActors(def);
-    console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length, "npcs", actors.npcs.length, "bosses", actors.bosses.length, "paths", actors.bosses.filter((boss) => boss.path.length >= 2).length);
-    maps.push({ id: def.id, title, image: file, pins, regions, entrances, npcs: actors.npcs, bosses: actors.bosses });
+    const links = collectTeleportLinks(def, byKey);
+    console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length, "npcs", actors.npcs.length, "bosses", actors.bosses.length, "paths", actors.bosses.filter((boss) => boss.path.length >= 2).length, "links", links.length);
+    maps.push({ id: def.id, title, image: file, pins, regions, entrances, links, npcs: actors.npcs, bosses: actors.bosses });
   }
   return maps;
 }
 
-module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, collectLootPoints, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };
+module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, collectLootPoints, collectTeleportLinks, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };

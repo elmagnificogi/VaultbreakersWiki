@@ -776,4 +776,4 @@ function attachCombat(sources) {
   console.log("combat", linked, "named attacks", titled, "magic attacks", magic);
 }
 
-module.exports = { attachCombat };
+module.exports = { attachCombat, readRecords, gameplayBytes, chineseByKey };

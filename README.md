@@ -1,12 +1,12 @@
-# 龙窟破坏者掉落表
+# 龙窟破坏者WIKI
 
 Steam 测试版《Vaultbreakers》的资料页。掉落表、怪物、搜刮点、物品，以及狼林、精炼厂、龙窟三张小地图，都从本地客户端的配置和贴图整理出来。名称用游戏内简体中文。客户端没有译文的条目仍显示原文。
 
-作者 elmagnifico。页面版本 v0.3，对应的测试版写在页面页眉。
+作者 elmagnifico。页面版本 v0.4，对应的测试版写在页面页眉。
 
 ## 查看
 
-到 [Releases](https://github.com/elmagnificogi/VaultbreakersWiki/releases) 下载最新的压缩包。文件名带页面版本和打包时间，例如 `Vaultbreakers-loot-wiki-v0.3-20261020-173000.zip`。解压后双击 `index.html`。
+到 [Releases](https://github.com/elmagnificogi/VaultbreakersWiki/releases) 下载最新的压缩包。文件名带页面版本和打包时间，例如 `Vaultbreakers-loot-wiki-v0.4-20261021-031315.zip`。解压后双击 `index.html`。
 
 也可以克隆本仓库，直接用浏览器打开仓库里的 `index.html`。图标、地图和 `data/db.json` 用的是相对路径，这些目录要留在 `index.html` 旁边。
 

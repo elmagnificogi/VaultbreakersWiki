@@ -7,6 +7,7 @@ const { decodeTexture } = require("./dxt");
 const { extractGameMaps, collectSpawns, MAP_DEFS } = require("./maps");
 const { collectCodex } = require("./codex");
 const { attachCombat } = require("./combat");
+const { attachSalvage } = require("./salvage");
 const { fillCreaturePortraits, fillNpcPortraits } = require("./render-creatures");
 
 const ROOT = __dirname;
@@ -1643,6 +1644,7 @@ function main() {
     questItems++;
   }
   console.log("quest items", questItems);
+  attachSalvage(itemList, dropTables, codex.gear);
 
   const usedIcons = new Set();
   for (const table of dropTables) for (const e of table.entries) if (e.itemIcon) usedIcons.add(e.itemIcon);
@@ -1676,7 +1678,7 @@ function writeHtml(db) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>龙窟破坏者掉落表</title>
+<title>龙窟破坏者WIKI</title>
 <style>
   :root { color-scheme: dark; --bg:#12141a; --panel:#1c2030; --line:#31384d; --text:#e7ebf5; --muted:#9aa3b8; --accent:#e2b15a; --good:#7dcea0; }
   * { box-sizing: border-box; }
@@ -1745,6 +1747,7 @@ function writeHtml(db) {
   .spawn-map i { position:absolute; z-index:1; width:8px; height:8px; border:1px solid #1a120c; border-radius:50%; background:#e74c3c; transform:translate(-50%,-50%); }
   .pin:hover { outline:2px solid #fff; z-index:2; }
   .gate { position:absolute; z-index:4; width:12px; height:12px; margin:0; padding:0; border:2px solid #111; background:#f7dc6f; transform:translate(-50%,-50%) rotate(45deg); }
+  .hop { position:absolute; z-index:5; width:11px; height:11px; border:2px solid #111; border-radius:50%; transform:translate(-50%,-50%); }
   .gate.extract { background:#e07a7a; border-radius:2px; transform:translate(-50%,-50%); }
   .gate-label, .actor-label { position:absolute; z-index:4; transform:translate(8px,-50%); font-size:12px; font-weight:700; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
   .actor { position:absolute; z-index:5; margin:0; padding:0; border:2px solid #111; transform:translate(-50%,-50%); }
@@ -1757,10 +1760,10 @@ function writeHtml(db) {
   .legend-tools b { min-width:4.5em; }
   .bulk { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); }
   .legend { display:flex; flex-wrap:wrap; gap:6px; }
-  .region-filter, .pin-filter, .gate-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
+  .region-filter, .pin-filter, .gate-filter, .link-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
   .npc-filter { display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:3px 8px 3px 3px; }
   .npc-filter img { width:36px; height:48px; object-fit:contain; background:#0e1118; border-radius:6px; }
-  .region-filter.on, .pin-filter.on, .gate-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
+  .region-filter.on, .pin-filter.on, .gate-filter.on, .link-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
   .dps h2 { margin:0 0 8px; font-size:20px; }
   main.dps-mode { grid-template-columns: 1fr; }
@@ -1805,9 +1808,9 @@ function writeHtml(db) {
 <body>
 <header>
   <div>
-    <h1>龙窟破坏者掉落表</h1>
+    <h1>龙窟破坏者WIKI</h1>
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件，任务 ${(db.quests || []).length} 个。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.3 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p class="meta">作者 elmagnifico · 版本 v0.4 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
@@ -2359,12 +2362,12 @@ function filtered() {
     return (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+(dropWords[t.enumName]||"")).toLowerCase().includes(q));
   });
   else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+combatWords(s)+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
-  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
+  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.links||[]).map(l => l.title).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
   else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+characterSummary(c)+" "+(c.stats||[]).map(s => s.label+" "+s.value).join(" ")+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
   else if (mode === "quests") rows = (db.quests || []).filter(quest => (cat==="全部"||(quest.areas||[]).includes(cat)) && (!q || (quest.title+" "+(quest.description||"")+" "+(quest.handIn||"")+" "+(quest.giver||"")+" "+(quest.turnIn||"")+" "+(quest.areas||[]).join(" ")+" "+(quest.steps||[]).map(step => (step.kind||"")+" "+(step.text||"")+" "+itemTitle(step.item)).join(" ")+" "+(quest.rewards||[]).map(reward => itemTitle(reward.item)).join(" ")).toLowerCase().includes(q)));
-  else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")+" "+(it.needs||[]).map(n => n.quest+" "+n.kind).join(" ")).toLowerCase().includes(q)));
+  else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")+" "+(it.needs||[]).map(n => n.quest+" "+n.kind).join(" ")+" "+(it.salvage||[]).map(s => (s.title||s.pool||"")+" "+(s.rarity||"")).join(" ")).toLowerCase().includes(q)));
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
 }
 function shown(text) {
@@ -2387,7 +2390,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : ""].filter(Boolean).join(" · ");
+    const sub = mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : "", (row.salvage||[]).length ? (row.salvage.length+" 个拆解来源") : ""].filter(Boolean).join(" · ");
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2588,8 +2591,18 @@ function open(row) {
         return '<tr><td>'+name+'</td><td>'+esc(need.kind)+'</td><td>'+need.count+'</td></tr>';
       }).join("") : '<tr><td colspan="3" class="muted">没有任务需要这个</td></tr>')
       + '</tbody></table>';
+    const salvage = row.salvage || [];
+    const salvageTable = salvage.length ? '<h3>拆解得到</h3><table><thead><tr><th>来源</th><th>品质</th><th>数量</th></tr></thead><tbody>'
+      + salvage.map(src => {
+        const item = src.item && (db.items || []).find(it => String(it.id) === String(src.item));
+        const gear = !item && src.item && (db.gear || []).find(g => String(g.id) === String(src.item));
+        const name = item ? '<a data-item="'+item.id+'">'+esc(item.title)+'</a>' : gear ? '<a data-gear="'+gear.id+'">'+esc(gear.title)+'</a>' : esc(src.pool || src.title || "");
+        return '<tr><td>'+name+'</td><td>'+esc(src.rarity || "")+'</td><td>'+(src.chance ? "有几率" : src.count)+'</td></tr>';
+      }).join("")
+      + '</tbody></table>' + (salvage.some(src => src.chance) ? '<p class="muted">有几率的来源是拆解时额外可能开出的，不是每次都有。</p>' : "") : "";
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
       + needTable
+      + salvageTable
       + '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
       + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
       + '</tbody></table>';
@@ -2729,6 +2742,12 @@ function open(row) {
       const shown = mapHit || pin.title.toLowerCase().includes(q);
       return '<button type="button" class="pin maybe" data-loot="'+pin.table+'" data-key="'+esc(pin.title)+'" data-title="'+esc(pin.title)+'" title="'+esc(pin.title)+'" style="left:'+pin.left+'%;top:'+pin.top+'%;background:transparent;border-color:'+colorOf(pin.title)+';display:'+(shown?"":"none")+'"></button>';
     }).join("");
+    const links = row.links || [];
+    const linkColors = ["#f5b041", "#5dade2", "#af7ac5", "#58d68d", "#ec7063", "#f4d03f"];
+    const linkTitles = [...new Set(links.map(link => link.title))];
+    const linkLegend = linkTitles.map(title => '<button type="button" class="tag link-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:#f5b041"></span>'+esc(title)+'</button>').join("");
+    const linkLines = links.map((link, index) => '<line data-key="'+esc(link.title)+'" data-title="'+esc(link.title)+'" x1="'+link.a.left+'" y1="'+link.a.top+'" x2="'+link.b.left+'" y2="'+link.b.top+'" stroke="'+linkColors[index % linkColors.length]+'" stroke-width="0.55" stroke-linecap="round"></line>').join("");
+    const hops = links.map((link, index) => [link.a, link.b].map(point => '<div class="hop" data-key="'+esc(link.title)+'" data-title="'+esc(link.title)+'" title="'+esc(link.title)+'" style="left:'+point.left+'%;top:'+point.top+'%;background:'+linkColors[index % linkColors.length]+'"></div>').join("")).join("");
     const entrances = row.entrances || [];
     const gateNudges = entrances.map((entrance, index) => entrances.slice(0, index).filter(other => Math.abs(other.left - entrance.left) < 4 && Math.abs(other.top - entrance.top) < 8).length);
     const gateLegend = entrances.map((entrance, index) => '<button type="button" class="tag gate-filter on" data-key="'+index+'" aria-pressed="true" data-title="'+esc(entrance.title)+'"><span class="dot" style="background:'+(entrance.kind==="extract"?"#e07a7a":"#f7dc6f")+'"></span>'+esc(entrance.title)+'</button>').join("");
@@ -2757,11 +2776,12 @@ function open(row) {
     const note = [
       regions.length ? "区域轮廓 "+regions.length+" 块，沿遮罩贴图边缘描出，并去掉落在纯色空地上、以及横跨空地的部分。" : "",
       entrances.length ? "入口 "+entrances.length+" 处：菱形是场景里的传送门，方块是撤离点。" : "这张地图的场景里没有写死的传送门或撤离点。",
+      links.length ? "同色圆点和连线是一组传送，两端互通。" : "",
       (row.pins.length || maybe.length) ? "实心点 "+row.pins.length+" 处是场景里摆好的搜刮点。虚线圆 "+maybe.length+" 处是配置里另外写下的位置，一局不一定都会刷出来。点标记打开对应掉落。" : "这张地图的场景里没有写好的搜刮点坐标。",
       npcs.length ? "NPC "+npcs.length+" 处，蓝点是场景里写死的位置。能对上来源的点可以打开该条目。" : "这张地图的场景里没有写死的 NPC 坐标。",
       bosses.length ? "固定怪 "+bosses.length+" 处，红菱形是场景里写死、总会刷在原地的具名单位。"+(pathCount ? "虚线是同一只怪旁边分开的巡逻点。" : "") : "这张地图的场景里没有写死的具名怪物坐标。",
     ].filter(Boolean).join("");
-    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+bossPaths+'</svg>'+labels+gates+dots+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
+    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("传送", "link", linkLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+bossPaths+linkLines+'</svg>'+labels+gates+hops+dots+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
     bindJumps(detailEl);
     function checkedKeys(selector) {
       const buttons = [...detailEl.querySelectorAll(selector)];
@@ -2781,6 +2801,10 @@ function open(row) {
     function applyGates() {
       const picked = checkedKeys(".gate-filter");
       detailEl.querySelectorAll(".mapstage .gate, .mapstage .gate-label").forEach(el => showIf(el, picked));
+    }
+    function applyLinks() {
+      const picked = checkedKeys(".link-filter");
+      detailEl.querySelectorAll(".mapstage svg line, .mapstage .hop").forEach(el => showIf(el, picked));
     }
     function applyPins() {
       const picked = checkedKeys(".pin-filter");
@@ -2814,16 +2838,19 @@ function open(row) {
     }
     bindChecks(".region-filter", applyRegions);
     bindChecks(".gate-filter", applyGates);
+    bindChecks(".link-filter", applyLinks);
     bindChecks(".pin-filter", applyPins);
     bindChecks(".npc-filter", applyNpcs);
     bindChecks(".boss-filter", applyBosses);
     bindBulk("region", ".region-filter", applyRegions);
     bindBulk("gate", ".gate-filter", applyGates);
+    bindBulk("link", ".link-filter", applyLinks);
     bindBulk("pin", ".pin-filter", applyPins);
     bindBulk("npc", ".npc-filter", applyNpcs);
     bindBulk("boss", ".boss-filter", applyBosses);
     applyRegions();
     applyGates();
+    applyLinks();
     applyPins();
     applyNpcs();
     applyBosses();
