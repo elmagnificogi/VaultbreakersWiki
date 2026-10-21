@@ -1399,6 +1399,7 @@ const SPAWN_POSITION = 2216820863;
 const SPAWN_CHILDREN = 321568097;
 const CHILD_POSITION = 1486226603;
 const LOOT_TABLE = 1762408745;
+const ITEM_PICKUP = 2741270443;
 
 function authoringEntries(def) {
   const buf = fs.readFileSync(path.join(BUNDLE_DIR, def.camera));
@@ -1508,6 +1509,30 @@ function collectLootPoints(def) {
   return points;
 }
 
+function collectItemPickups(def) {
+  const frame = mapFrame(def);
+  const points = [];
+  const seen = new Set();
+  for (const entry of authoringEntries(def)) {
+    const name = String(entry[0] || "");
+    if (!name.startsWith("Authored_ItemPickup")) continue;
+    const pickup = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === ITEM_PICKUP && Array.isArray(comp[1]));
+    const pos = (entry[4] || []).find((comp) => Array.isArray(comp) && comp[0] === SPAWN_POSITION && Array.isArray(comp[1]) && comp[1].length === 2);
+    if (!pickup || !pos) continue;
+    const item = pickup[1][0];
+    const amount = pickup[1][1];
+    if (!(item > 0) || !(amount > 0)) continue;
+    const spot = mapSpot(frame, pos[1][0] / 65536, pos[1][1] / 65536);
+    if (!spot) continue;
+    const key = item + ":" + amount + ":" + spot.left + ":" + spot.top;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push({ item, amount, left: spot.left, top: spot.top });
+  }
+  points.sort((a, b) => a.item - b.item || a.top - b.top || a.left - b.left || a.amount - b.amount);
+  return points;
+}
+
 function nestedPair(node) {
   if (!Array.isArray(node) || node.length < 2) return null;
   const x = Array.isArray(node[0]) ? node[0][0] : node[0];
@@ -1589,10 +1614,11 @@ function extractGameMaps(byKey) {
     const entrances = collectEntrances(def);
     const actors = collectActors(def);
     const links = collectTeleportLinks(def, byKey);
-    console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length, "npcs", actors.npcs.length, "bosses", actors.bosses.length, "paths", actors.bosses.filter((boss) => boss.path.length >= 2).length, "links", links.length);
-    maps.push({ id: def.id, title, image: file, pins, regions, entrances, links, npcs: actors.npcs, bosses: actors.bosses });
+    const pickups = collectItemPickups(def);
+    console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length, "npcs", actors.npcs.length, "bosses", actors.bosses.length, "paths", actors.bosses.filter((boss) => boss.path.length >= 2).length, "links", links.length, "pickups", pickups.length);
+    maps.push({ id: def.id, title, image: file, pins, regions, entrances, links, pickups, npcs: actors.npcs, bosses: actors.bosses });
   }
   return maps;
 }
 
-module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, collectLootPoints, collectTeleportLinks, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };
+module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, collectLootPoints, collectItemPickups, collectTeleportLinks, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };

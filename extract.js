@@ -1608,6 +1608,8 @@ function main() {
       entrances,
       npcs,
       bosses,
+      links: map.links || [],
+      pickups: map.pickups || [],
     };
   });
 
@@ -1739,12 +1741,14 @@ function writeHtml(db) {
   .mapstage svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .region-label { position:absolute; z-index:1; transform:translate(-50%,-50%); font-size:13px; font-weight:700; color:#fff; white-space:nowrap; pointer-events:none; text-shadow:0 0 4px #000, 0 1px 2px #000; }
   .pin { position:absolute; z-index:2; width:12px; height:12px; margin:0; padding:0; border:1px solid #111; border-radius:50%; transform:translate(-50%,-50%); cursor:pointer; }
+  .ground { position:absolute; z-index:3; width:12px; height:12px; margin:0; padding:0; border:2px solid #111; border-radius:2px; transform:translate(-50%,-50%); cursor:pointer; }
   .pin.maybe { background:transparent; border-style:dashed; border-width:2px; }
   .spawn-map { position:relative; max-width:560px; margin:8px 0 4px; }
   .spawn-map img { width:100%; display:block; }
   .spawn-map svg { position:absolute; inset:0; width:100%; height:100%; }
   .spawn-map .route { fill:none; stroke:#f2d27a; stroke-width:0.45; stroke-dasharray:1.2 0.7; stroke-linecap:round; stroke-linejoin:round; }
   .spawn-map i { position:absolute; z-index:1; width:8px; height:8px; border:1px solid #1a120c; border-radius:50%; background:#e74c3c; transform:translate(-50%,-50%); }
+  .spawn-map i.fixed { border-radius:2px; background:#e2b15a; }
   .pin:hover { outline:2px solid #fff; z-index:2; }
   .gate { position:absolute; z-index:4; width:12px; height:12px; margin:0; padding:0; border:2px solid #111; background:#f7dc6f; transform:translate(-50%,-50%) rotate(45deg); }
   .hop { position:absolute; z-index:5; width:11px; height:11px; border:2px solid #111; border-radius:50%; transform:translate(-50%,-50%); }
@@ -1760,10 +1764,11 @@ function writeHtml(db) {
   .legend-tools b { min-width:4.5em; }
   .bulk { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); }
   .legend { display:flex; flex-wrap:wrap; gap:6px; }
-  .region-filter, .pin-filter, .gate-filter, .link-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
+  .region-filter, .pin-filter, .ground-filter, .gate-filter, .link-filter, .npc-filter, .boss-filter { cursor:pointer; border:2px solid #3a4258; background:transparent; color:#6d778c; opacity:.48; font-weight:500; box-shadow:none; }
   .npc-filter { display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:3px 8px 3px 3px; }
   .npc-filter img { width:36px; height:48px; object-fit:contain; background:#0e1118; border-radius:6px; }
-  .region-filter.on, .pin-filter.on, .gate-filter.on, .link-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
+  .region-filter.on, .pin-filter.on, .ground-filter.on, .gate-filter.on, .link-filter.on, .npc-filter.on, .boss-filter.on { border:2px solid #ffe7b0; background:#46506c; color:#fff; opacity:1; font-weight:700; box-shadow:0 0 0 1px rgba(255,231,176,.55), 0 0 12px rgba(226,177,90,.55); }
+  .ground:hover { outline:2px solid #fff; z-index:6; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
   .dps h2 { margin:0 0 8px; font-size:20px; }
   main.dps-mode { grid-template-columns: 1fr; }
@@ -2353,6 +2358,18 @@ function itemTitle(id) {
   const item = (db.items || []).find(it => String(it.id) === String(id));
   return item ? item.title : "";
 }
+function groundSpots(id) {
+  const spots = [];
+  for (const map of db.maps || []) {
+    for (const spot of map.pickups || []) {
+      if (String(spot.item) !== String(id)) continue;
+      const title = itemTitle(spot.item);
+      if (!/[\u4e00-\u9fff]/.test(title)) continue;
+      spots.push({ map: map.title, mapId: map.id, amount: spot.amount, left: spot.left, top: spot.top });
+    }
+  }
+  return spots;
+}
 function filtered() {
   const q = qEl.value.trim().toLowerCase();
   const cat = catEl.value;
@@ -2362,7 +2379,7 @@ function filtered() {
     return (cat==="全部"||t.category===cat) && (!q || (named(t.title, t.enumName)+" "+t.title+" "+(t.english||"")+" "+t.enumName+" "+(dropWords[t.enumName]||"")).toLowerCase().includes(q));
   });
   else if (mode === "sources") rows = db.sources.filter(s => (cat==="全部"||s.category===cat) && (!q || (sourceLabel(s)+" "+s.title+" "+(s.english||"")+" "+(s.place||"")+" "+(s.look||"")+" "+s.asset+" "+combatWords(s)+" "+s.refs.map(r=>named(r.title, r.table)+" "+(dropWords[r.table]||"")).join(" ")).toLowerCase().includes(q)));
-  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.links||[]).map(l => l.title).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
+  else if (mode === "maps") rows = (db.maps || []).filter(m => !q || (m.title + " " + m.pins.map(p => p.title).join(" ") + " " + (m.pickups||[]).map(p => itemTitle(p.item)).join(" ") + " " + (m.regions||[]).map(r => r.title + " " + r.english).join(" ") + " " + (m.entrances||[]).map(e => e.title + " " + e.detail).join(" ") + " " + (m.links||[]).map(l => l.title).join(" ") + " " + (m.npcs||[]).map(n => n.title).join(" ") + " " + (m.bosses||[]).map(b => b.title).join(" ")).toLowerCase().includes(q));
   else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+characterSummary(c)+" "+(c.stats||[]).map(s => s.label+" "+s.value).join(" ")+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
@@ -2390,7 +2407,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), (row.needs||[]).length ? (row.needs.length+" 个任务需要") : "", (row.salvage||[]).length ? (row.salvage.length+" 个拆解来源") : ""].filter(Boolean).join(" · ");
+    const sub = mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.pickups||[]).length)+" 个地上物品 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), groundSpots(row.id).length ? (groundSpots(row.id).length+" 处固定搜刮") : "", (row.needs||[]).length ? (row.needs.length+" 个任务需要") : "", (row.salvage||[]).length ? (row.salvage.length+" 个拆解来源") : ""].filter(Boolean).join(" · ");
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2475,6 +2492,28 @@ function spawnMaps(row) {
     return '<div class="spawn-map"><img alt="'+esc(map.title)+'" src="'+map.image+'">'+svg+dots+'</div><p class="muted">'+esc(map.title)+'，可能刷新 '+here.length+' 处。一局里不一定每处都会出现。'+routeNote+'</p>';
   }).join("");
 }
+function groundMaps(spots) {
+  const ids = [];
+  for (const spot of spots) if (ids.indexOf(spot.mapId) < 0) ids.push(spot.mapId);
+  return ids.map(id => {
+    const map = (db.maps || []).find(item => item.id === id);
+    if (!map || !map.image) return "";
+    const here = spots.filter(spot => spot.mapId === id);
+    const dots = here.map(spot => '<i class="fixed" style="left:'+spot.left+'%;top:'+spot.top+'%"></i>').join("");
+    const amounts = [];
+    for (const spot of here) {
+      let group = null;
+      for (const item of amounts) if (item.amount === spot.amount) group = item;
+      if (!group) {
+        group = { amount: spot.amount, count: 0 };
+        amounts.push(group);
+      }
+      group.count++;
+    }
+    const detail = amounts.map(group => group.count + " 处 ×" + group.amount).join("，");
+    return '<div class="spawn-map"><img alt="'+esc(map.title)+'" src="'+map.image+'">'+dots+'</div><p class="muted"><a data-map="'+esc(map.id)+'">'+esc(map.title)+'</a>，固定出现 '+detail+'。</p>';
+  }).join("");
+}
 function portraitOf(table) {
   if (!table) return "";
   const owner = db.sources.find(s => s.icon && s.refs && s.refs.some(r => r.table === table.enumName));
@@ -2528,7 +2567,7 @@ function bindJumps(root) {
   root.querySelectorAll("[data-skill]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.skills || []).find(s => s.name === a.dataset.skill); if (row) show("skills", row); });
   root.querySelectorAll("[data-character]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.characters || []).find(c => c.id === a.dataset.character); if (row) show("characters", row); });
   root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
-  root.querySelectorAll("[data-quest]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.quests || []).find(q => q.id === a.dataset.quest); if (row) show("quests", row); });
+  root.querySelectorAll("[data-map]").forEach(a => a.onclick = (event) => { event.preventDefault(); const map = (db.maps || []).find(m => m.id === a.dataset.map); if (map) show("maps", map); });
 }
 function open(row) {
   current = row;
@@ -2600,12 +2639,16 @@ function open(row) {
         return '<tr><td>'+name+'</td><td>'+esc(src.rarity || "")+'</td><td>'+(src.chance ? "有几率" : src.count)+'</td></tr>';
       }).join("")
       + '</tbody></table>' + (salvage.some(src => src.chance) ? '<p class="muted">有几率的来源是拆解时额外可能开出的，不是每次都有。</p>' : "") : "";
+    const ground = groundSpots(row.id);
+    const groundTable = ground.length ? '<h3>地图上的固定搜刮</h3>'+groundMaps(ground)+'<p class="muted">方块是场景里写死的位置，每次都在原地，不是箱子里开出来的。</p>' : "";
+    const dropTable = '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
+      + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
+      + '</tbody></table>';
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
       + needTable
       + salvageTable
-      + '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
-      + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
-      + '</tbody></table>';
+      + groundTable
+      + (from.length || !ground.length ? dropTable : "");
     bindJumps(detailEl);
   } else if (mode === "quests") {
     const itemLink = (id) => {
@@ -2701,6 +2744,11 @@ function open(row) {
         maybe.push({ title: source.title, table: table, left: point.left, top: point.top });
       }
     }
+    const ground = (row.pickups || []).map(spot => {
+      const title = itemTitle(spot.item);
+      if (!/[\u4e00-\u9fff]/.test(title)) return null;
+      return { title: title, item: spot.item, amount: spot.amount, left: spot.left, top: spot.top };
+    }).filter(Boolean);
     const titles = [...new Set(row.pins.map(pin => pin.title).concat(maybe.map(pin => pin.title)))];
     const colorOf = (title) => colors[titles.indexOf(title) % colors.length];
     const regions = row.regions || [];
@@ -2742,6 +2790,14 @@ function open(row) {
       const shown = mapHit || pin.title.toLowerCase().includes(q);
       return '<button type="button" class="pin maybe" data-loot="'+pin.table+'" data-key="'+esc(pin.title)+'" data-title="'+esc(pin.title)+'" title="'+esc(pin.title)+'" style="left:'+pin.left+'%;top:'+pin.top+'%;background:transparent;border-color:'+colorOf(pin.title)+';display:'+(shown?"":"none")+'"></button>';
     }).join("");
+    const groundTitles = [...new Set(ground.map(spot => spot.title))];
+    const groundColor = (title) => colors[groundTitles.indexOf(title) % colors.length];
+    const groundLegend = groundTitles.map(title => '<button type="button" class="tag ground-filter on" data-key="'+esc(title)+'" aria-pressed="true" data-title="'+esc(title)+'"><span class="dot" style="background:'+groundColor(title)+'"></span>'+esc(title)+'</button>').join("");
+    const groundMarks = ground.map(spot => {
+      const shown = mapHit || spot.title.toLowerCase().includes(q);
+      const tip = spot.amount > 1 ? spot.title + " ×" + spot.amount : spot.title;
+      return '<button type="button" class="ground" data-item="'+spot.item+'" data-key="'+esc(spot.title)+'" data-title="'+esc(spot.title)+'" title="'+esc(tip)+'" style="left:'+spot.left+'%;top:'+spot.top+'%;background:'+groundColor(spot.title)+';display:'+(shown?"":"none")+'"></button>';
+    }).join("");
     const links = row.links || [];
     const linkColors = ["#f5b041", "#5dade2", "#af7ac5", "#58d68d", "#ec7063", "#f4d03f"];
     const linkTitles = [...new Set(links.map(link => link.title))];
@@ -2777,11 +2833,12 @@ function open(row) {
       regions.length ? "区域轮廓 "+regions.length+" 块，沿遮罩贴图边缘描出，并去掉落在纯色空地上、以及横跨空地的部分。" : "",
       entrances.length ? "入口 "+entrances.length+" 处：菱形是场景里的传送门，方块是撤离点。" : "这张地图的场景里没有写死的传送门或撤离点。",
       links.length ? "同色圆点和连线是一组传送，两端互通。" : "",
-      (row.pins.length || maybe.length) ? "实心点 "+row.pins.length+" 处是场景里摆好的搜刮点。虚线圆 "+maybe.length+" 处是配置里另外写下的位置，一局不一定都会刷出来。点标记打开对应掉落。" : "这张地图的场景里没有写好的搜刮点坐标。",
+      (row.pins.length || maybe.length) ? "实心点 "+row.pins.length+" 处是场景里摆好的搜刮点。虚线圆 "+maybe.length+" 处是配置里另外写下的位置，一局不一定都会刷出来。点标记打开对应掉落。" : (ground.length ? "" : "这张地图的场景里没有写好的搜刮点坐标。"),
+      ground.length ? "方块 "+ground.length+" 处是直接放在地上的物品，位置是场景里写死的。点一下打开该物品。" : "",
       npcs.length ? "NPC "+npcs.length+" 处，蓝点是场景里写死的位置。能对上来源的点可以打开该条目。" : "这张地图的场景里没有写死的 NPC 坐标。",
       bosses.length ? "固定怪 "+bosses.length+" 处，红菱形是场景里写死、总会刷在原地的具名单位。"+(pathCount ? "虚线是同一只怪旁边分开的巡逻点。" : "") : "这张地图的场景里没有写死的具名怪物坐标。",
     ].filter(Boolean).join("");
-    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("传送", "link", linkLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+bossPaths+linkLines+'</svg>'+labels+gates+hops+dots+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
+    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("传送", "link", linkLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("地上物品", "ground", groundLegend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+bossPaths+linkLines+'</svg>'+labels+gates+hops+dots+groundMarks+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
     bindJumps(detailEl);
     function checkedKeys(selector) {
       const buttons = [...detailEl.querySelectorAll(selector)];
@@ -2809,6 +2866,10 @@ function open(row) {
     function applyPins() {
       const picked = checkedKeys(".pin-filter");
       detailEl.querySelectorAll(".mapstage .pin").forEach(el => showIf(el, picked));
+    }
+    function applyGround() {
+      const picked = checkedKeys(".ground-filter");
+      detailEl.querySelectorAll(".mapstage .ground").forEach(el => showIf(el, picked));
     }
     function applyNpcs() {
       const picked = checkedKeys(".npc-filter");
@@ -2840,18 +2901,21 @@ function open(row) {
     bindChecks(".gate-filter", applyGates);
     bindChecks(".link-filter", applyLinks);
     bindChecks(".pin-filter", applyPins);
+    bindChecks(".ground-filter", applyGround);
     bindChecks(".npc-filter", applyNpcs);
     bindChecks(".boss-filter", applyBosses);
     bindBulk("region", ".region-filter", applyRegions);
     bindBulk("gate", ".gate-filter", applyGates);
     bindBulk("link", ".link-filter", applyLinks);
     bindBulk("pin", ".pin-filter", applyPins);
+    bindBulk("ground", ".ground-filter", applyGround);
     bindBulk("npc", ".npc-filter", applyNpcs);
     bindBulk("boss", ".boss-filter", applyBosses);
     applyRegions();
     applyGates();
     applyLinks();
     applyPins();
+    applyGround();
     applyNpcs();
     applyBosses();
     const mapwrap = detailEl.querySelector(".mapwrap");
@@ -3227,7 +3291,7 @@ mode = "sources";
 </script>
 </body>
 </html>`;
-  fs.writeFileSync(path.join(ROOT, "index.html"), html);
+  fs.writeFileSync(path.join(ROOT, "龙窟破坏者WIKI.html"), html);
 }
 
 main();

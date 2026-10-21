@@ -25,11 +25,11 @@
 node extract.js
 ```
 
-`extract.js` 末尾直接调用 `main()`。页面只能由 `extract.js` 的 `writeHtml` 生成。不要手改 `index.html`。
+`extract.js` 末尾直接调用 `main()`。页面只能由 `extract.js` 的 `writeHtml` 生成。不要手改 `龙窟破坏者WIKI.html`。
 
 一次运行会写出：
 
-- `index.html`：整页，数据嵌在 `<script id="db" type="application/json">`
+- `龙窟破坏者WIKI.html`：整页，数据嵌在 `<script id="db" type="application/json">`
 - `data/db.json`：同一份数据
 
 另外会按需写出 `icons/*.png` 和 `maps/<id>.png`。这两个目录里**已经存在的文件会被跳过**，见第 5、9、10 节。不要为了「刷新页面」去转已经落地的图。
@@ -291,7 +291,7 @@ top'  = 100 - 原来的 left
 - `1.0` 是旁边两个平台字段。Steam `appmanifest_4488770.acf` 的 `buildid` `25959928` 是安装构建号。exe 的 ProductVersion `6000.3.18f1` 是引擎版本
 - 页面上的游戏版本是 `2.0.2244.110866`，括号里保留 Steam build `25959928`
 
-作者和 v0.4 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `index.html`。
+作者和 v0.4 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `龙窟破坏者WIKI.html`。
 
 ## 10. 更新时不要做的事
 
@@ -302,5 +302,5 @@ top'  = 100 - 原来的 left
 - 不要把 bundle、贴图或场景资产拷进 wiki 目录。wiki 只留脚本生成的 html、json 和 png
 - 不要重新 dump IL2CPP
 - 不要为了地图浮点去改 `serialized.js` 的 `readPrimitive`
-- 不要手改 `index.html`
+- 不要手改 `龙窟破坏者WIKI.html`
 - 不要提交 git，除非用户另说

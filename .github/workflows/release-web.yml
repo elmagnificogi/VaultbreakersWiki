@@ -22,11 +22,11 @@ jobs:
           set -euo pipefail
           rm -rf site
           mkdir -p site/maps site/icons
-          cp index.html site/index.html
+          cp "龙窟破坏者WIKI.html" "site/龙窟破坏者WIKI.html"
           cp maps/pinewood.png maps/refinery.png maps/dragonvault.png site/maps/
           find icons -maxdepth 1 -type f -iname '*.png' -exec cp -t site/icons {} +
           cat > site/README.md << 'EOF'
-          解压后用浏览器打开 index.html。
+          解压后用浏览器打开 龙窟破坏者WIKI.html。
 
           这个压缩包只有页面、图标和三张小地图。
           EOF
@@ -43,7 +43,7 @@ jobs:
           if bad:
               raise SystemExit("refusing to pack: " + ", ".join(bad))
           required = [
-              "site/index.html",
+              "site/龙窟破坏者WIKI.html",
               "site/maps/pinewood.png",
               "site/maps/refinery.png",
               "site/maps/dragonvault.png",
@@ -54,9 +54,9 @@ jobs:
               raise SystemExit(f"site pack incomplete: missing={missing} icons={len(icons)}")
           print(f"packed icons {len(icons)}")
           PY
-          version=$(grep -oE '版本 v[0-9]+(\.[0-9]+)+' index.html | head -n 1 | awk '{print $2}')
+          version=$(grep -oE '版本 v[0-9]+(\.[0-9]+)+' "龙窟破坏者WIKI.html" | head -n 1 | awk '{print $2}')
           if [ -z "$version" ]; then
-            echo "page version missing from index.html" >&2
+            echo "page version missing from 龙窟破坏者WIKI.html" >&2
             exit 1
           fi
           stamp=$(TZ=Asia/Shanghai date +%Y%m%d-%H%M%S)
@@ -99,5 +99,5 @@ jobs:
           fail_on_unmatched_files: true
           files: ${{ steps.pack.outputs.archive }}
           body: |
-            解压后用浏览器打开 index.html，不需要安装游戏。
+            解压后用浏览器打开 龙窟破坏者WIKI.html，不需要安装游戏。
             压缩包只有页面、图标和三张小地图。
