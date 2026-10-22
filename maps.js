@@ -5,19 +5,30 @@ const { PNG } = require("pngjs");
 const { parseSerialized, readObject } = require("./serialized");
 const { decodeTexture } = require("./dxt");
 
-const BUNDLE_DIR = path.resolve(__dirname, "../Vaultbreakers_Data/StreamingAssets/aa/StandaloneWindows64");
+function gameDir() {
+  const candidates = [
+    path.resolve(__dirname, ".."),
+    "D:\\Steam\\steamapps\\common\\Vaultbreakers Demo",
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "Vaultbreakers_Data"))) return dir;
+  }
+  throw new Error("找不到 Vaultbreakers Demo");
+}
+
+const BUNDLE_DIR = path.join(gameDir(), "Vaultbreakers_Data/StreamingAssets/aa/StandaloneWindows64");
 
 const MAP_DEFS = [
   {
     id: "pinewood",
-    scene: "22e8bc68e9df03c0af8b54ec8aaec7c0.bundle",
+    scene: "6d791b5cb0785cb7beca8c1601b4ccb8.bundle",
     texture: "6dfc96724fd67e223427f4e284491daf.bundle",
     camera: "fbe10b298712e63a2b4c702469432f05.bundle",
     nameKey: "MapName_Pinewood",
   },
   {
     id: "refinery",
-    scene: "b411e94175656f65f931de14528d785b.bundle",
+    scene: "787d4afed5ef099a0819ea3c40748012.bundle",
     texture: "3b5fd3da52126ef35d7646afe469b8a3.bundle",
     camera: "e15153d3ebdf26bc846fb0755b9cb8cd.bundle",
     nameKey: "MapName_Refinery",
