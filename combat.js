@@ -720,10 +720,20 @@ function readSharedKeys(sf, obj) {
 
 function abilityTitle(stem, byKey) {
   const keys = [stem, stem + "_topTooltip", stem.replace(/Attack$/, ""), stem.replace(/BasicAttack$/, "")];
+  if (!/Attack$/i.test(stem)) keys.push(stem + "Attack");
+  const usable = (text) => text && /[\u4e00-\u9fff]/.test(text) && text.length <= 12 && !/[。，]/.test(text);
   for (const key of keys) {
     const text = byKey.get(key);
-    if (!text || !/[\u4e00-\u9fff]/.test(text) || text.length > 12 || /[。，]/.test(text)) continue;
-    return text;
+    if (usable(text)) return text;
+  }
+  const folded = new Map();
+  for (const [key, text] of byKey) {
+    if (!usable(text)) continue;
+    if (!folded.has(key.toLowerCase())) folded.set(key.toLowerCase(), text);
+  }
+  for (const key of keys) {
+    const text = folded.get(key.toLowerCase());
+    if (text) return text;
   }
   return "";
 }

@@ -159,7 +159,7 @@ Unity 贴图原点在左下，写 PNG 时要先做一次 180° 翻转才是正�
 
 稀有度标签按游戏内名称：常见、罕见、稀有、卓越、传奇、任务物品、诅咒物品。条目上的稀有度数组是各档相对权重，显示时按它们自己的和换算，和上面的掉落百分点是两套数。
 
-flags：`2` 仅本职业可用，`4` 占位，`8` 忽略稀有度，`16` 配方书。
+flags：`2` 仅本职业可用，`4` 占位，`8` 忽略稀有度，`16` 配方书。带配方书标记的掉落在页面「制作图纸」里按做成的物品列出来，几率是图纸本身的掉落，不是成品。
 
 没有嵌入元素、但有某个 `*DropTable` 整数字段（排除 `TotalWeight`）的对象，记成来源（怪物、容器、商人）。来源分类看标题、英文名和资产名：工坊与商人、搜刮点、其余算怪物。箱子类掉落表还会再推一条「搜刮点」来源，图标优先用 `describeLoot` 配的箱子图。
 
@@ -273,14 +273,14 @@ top  = (1 - v) * 100
 
 `exportMinimap` 和写图标的主循环在文件已存在时直接返回。不要再翻图标，也不要给小地图加左右镜像。
 
-页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.5**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2244.110866**，后面括号里的 Steam build 25959928 是安装构建号。`1.0` 不是游戏版本：
+页眉：`extract.js` 的 `writeHtml` 里已经有作者 **elmagnifico**、wiki 版本 **v0.6**，以及游戏版本那一格。页眉写的是客户端 `bundleVersion` **2.0.2244.110866**，后面括号里的 Steam build 25959928 是安装构建号。`1.0` 不是游戏版本：
 
 - `Vaultbreakers_Data/globalgamemanagers` 的 PlayerSettings 里，连续三个版本字符串是 `visionOSBundleVersion = 1.0`、`tvOSBundleVersion = 1.0`、`bundleVersion = 2.0.2244.110866`
 - `bundleVersion` 才是运行时 `Application.version`。页面上的游戏版本用 **`2.0.2244.110866`**
 - `1.0` 是旁边两个平台字段。Steam `appmanifest_4488770.acf` 的 `buildid` `25959928` 是安装构建号。exe 的 ProductVersion `6000.3.18f1` 是引擎版本
 - 页面上的游戏版本是 `2.0.2244.110866`，括号里保留 Steam build `25959928`
 
-作者和 v0.5 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `龙窟破坏者WIKI.html`。
+作者和 v0.6 只放在 `writeHtml` 模板里，靠 `node extract.js` 进页面。不要手改 `龙窟破坏者WIKI.html`。
 
 ## 10. 更新时不要做的事
 

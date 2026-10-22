@@ -1667,6 +1667,13 @@ function main() {
 }
 
 function writeHtml(db) {
+  const recipeIds = new Set();
+  for (const table of db.dropTables || []) {
+    for (const entry of table.entries || []) {
+      if (entry.outcome !== 1 && (entry.outcome === 2 || (entry.flagText || []).includes("配方书"))) recipeIds.add(entry.item);
+    }
+  }
+  const recipeCount = recipeIds.size;
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1809,12 +1816,12 @@ function writeHtml(db) {
 <header>
   <div>
     <h1>龙窟破坏者WIKI</h1>
-    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件，任务 ${(db.quests || []).length} 个。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.5 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件，任务 ${(db.quests || []).length} 个，制作图纸 ${recipeCount} 张。</p>
+    <p class="meta">作者 elmagnifico · 版本 v0.6 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
-      <input id="q" placeholder="搜索怪物、箱子、物品、任务、角色、技能、装备" autocomplete="off" />
+      <input id="q" placeholder="搜索怪物、箱子、物品、图纸、任务、角色、技能、装备" autocomplete="off" />
       <div id="history" class="search-history" hidden></div>
     </div>
     <select id="cat"></select>
@@ -1824,6 +1831,7 @@ function writeHtml(db) {
       <button id="tab-skills">技能</button>
       <button id="tab-gear">装备</button>
       <button id="tab-items">物品</button>
+      <button id="tab-recipes">制作图纸</button>
       <button id="tab-quests">任务</button>
       <button id="tab-maps">地图</button>
       <button id="tab-rules">难度与多人</button>
@@ -1970,6 +1978,27 @@ function writeHtml(db) {
     <p>举例：假如一只狼的标记是「低」。单排它就是普通狼。双排大约 85% 变成精英，血量和伤害按上表变高，剩下 15% 还是普通狼。三排大约一半变成噩梦，45% 变成精英，只有 5% 还是普通狼。头狼是另一只怪，不是这只狼变出来的。</p>
     <p>所以双排时，你会觉得一部分敌人比单排更强，也可能遇到单排或双排的玩家。三排时，更多敌人比单排、双排更强，也可能遇到单排、双排或三排的玩家。</p>
     <p>人数不会让整张地图的怪物按一个倍数变多。金库是单人、双人、三人各一套布置。撤离时，附近如果还有别的玩家，会多刷一些，那只影响这次撤离，不是全图的怪都变多。</p>
+
+    <h2>掉落概率</h2>
+    <p>怪物页上的几率，按它身上挂的掉落表算。冒险、核心、破阵者不改这些几率。难度改的是箱子里的金币、基础材料的个数，以及没写死品质时能不能开出卓越和传奇。</p>
+    <p>普通的狼只挂一张总表「狼」，总表里再套几张子表。一次击杀里，这些表分开算。</p>
+    <p>总表权重合计 18。材料和裂隙残留物合在一轮里抽，抽中一张：</p>
+    <table>
+      <thead>
+        <tr><th>子表</th><th>权重</th><th>这一轮</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>材料</td><td>15</td><td>15/18，约 83.3%</td></tr>
+        <tr><td>裂隙残留物 1</td><td>3</td><td>3/18，约 16.7%</td></tr>
+      </tbody>
+    </table>
+    <p>另外四条各自再掷一次，和上面那一轮无关，也可以同时中：狼贵重 30%，装备掉落 1 是 10%，符文兽皮的配方书 1%，配方 1 是 0.5%。配方书掉的是图纸，不是成品。</p>
+    <p>进了子表，再按子表自己的权重合计抽一件。两层相乘，才是这只狼掉出那样东西的几率。</p>
+    <p>兽皮走材料。材料表合计 102，兽皮占 35，数量 1 到 2。15/18 × 35/102，约 28.6%。兽皮的品质写死是常见，掉出来就是这一档，几率不再往下拆。</p>
+    <p>贵重是上面那条独立的 30%。诡异尖爪在贵重表里占 15/63，30% × 15/63，约 7.1%。</p>
+    <p>爪步靴走装备，品质写死是罕见。10% 进入装备掉落 1，其中装备子表占 4/74，爪步靴占 300/9000。10% × 4/74 × 300/9000，约 0.018%。写死了品质，就只算这一档。</p>
+    <p>大部分物品都是这样，品质在物品上是固定的。掉落条目里那组稀有度权重，不拿来把它们拆成好几档。</p>
+    <p>没有写死品质的装备才用这组权重。忍耐军靴就是这种。10% 进入装备掉落 1，里面的装备 1 占 16/74，这张子表合计 9，忍耐军靴占 1，约 0.24%。权重是常见 8000、罕见 1900、稀有 100。常见约 0.19%，罕见约 0.05%，稀有约 0.0024%。</p>
   </section>
 </main>
 <script id="db" type="application/json">${JSON.stringify(db).replace(/</g, "\\u003c")}</script>
@@ -2252,7 +2281,7 @@ let current = null;
 let historyLock = false;
 let appliedUrl = "";
 let mapObservers = [];
-const lastByMode = { tables: null, sources: null, items: null, maps: null, characters: null, skills: null, gear: null };
+const lastByMode = { tables: null, sources: null, items: null, maps: null, characters: null, skills: null, gear: null, recipes: null };
 const listScroll = {};
 function icon(src, alt) {
   if (!src) return '<img class="icon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">';
@@ -2334,7 +2363,9 @@ function formatPct(portion) {
   const n = portion * 100;
   if (n >= 10) return (Math.round(n * 10) / 10).toString().replace(/\\.0$/, "") + "%";
   if (n >= 1) return n.toFixed(1) + "%";
-  return n.toFixed(2) + "%";
+  if (n >= 0.01 || n === 0) return n.toFixed(2) + "%";
+  const fine = n.toPrecision(2);
+  return (fine.indexOf("e") >= 0 ? n.toFixed(4) : fine) + "%";
 }
 function chance(table, entry) {
   return formatPct(entryPortion(table, entry));
@@ -2355,6 +2386,12 @@ function flattenDrops(table, mul, depth, seen) {
     }
   }
   return rows;
+}
+function fixedRarityOf(id) {
+  const gear = (db.gear || []).find(row => String(row.id) === String(id));
+  if (gear && gear.rarity) return gear.rarity;
+  const item = (db.items || []).find(row => String(row.id) === String(id));
+  return (item && item.rarity) || "";
 }
 function mergeGearDrops(drops) {
   const gearIds = {};
@@ -2383,17 +2420,21 @@ function mergeGearDrops(drops) {
     });
   }
   for (const group of groups.values()) {
+    const fixed = fixedRarityOf(group.id);
+    if (fixed) group.rarity = fixed;
     if (group.count < 2) continue;
     const gearParts = [];
     const bookParts = [];
     for (const part of group.parts) (part.recipe ? bookParts : gearParts).push(part);
-    const gearText = rarityChanceText(gearParts);
-    const bookText = rarityChanceText(bookParts);
-    const lines = [];
-    if (gearText) lines.push(gearText);
-    if (bookText) lines.push("配方书 " + bookText);
-    group.oddsText = lines.join(" · ");
-    group.rarity = "";
+    if (!fixed) {
+      const gearText = rarityChanceText(gearParts);
+      const bookText = rarityChanceText(bookParts);
+      const lines = [];
+      if (gearText) lines.push(gearText);
+      if (bookText) lines.push("配方书 " + bookText);
+      group.oddsText = lines.join(" · ");
+      group.rarity = "";
+    }
     const base = gearParts.length ? gearParts : bookParts;
     const shared = [];
     for (const flag of (base[0] && base[0].flags) || []) {
@@ -2424,6 +2465,111 @@ function rarityChanceText(parts) {
   if (plain) bits.push(formatPct(plain));
   return bits.join(" · ");
 }
+function chanceText(parts) {
+  const gearParts = [];
+  const bookParts = [];
+  for (const part of parts) {
+    const recipe = !!(part.recipe || (part.flags || []).indexOf("配方书") >= 0);
+    (recipe ? bookParts : gearParts).push(part);
+  }
+  const fixed = parts.length && fixedRarityOf(parts[0].id);
+  const lines = [];
+  if (fixed) {
+    const sum = (list) => list.reduce((total, part) => total + part.chance, 0);
+    if (gearParts.length) lines.push(formatPct(sum(gearParts)));
+    if (bookParts.length) lines.push("配方书 " + formatPct(sum(bookParts)));
+    return lines.join(" · ");
+  }
+  const gearText = rarityChanceText(gearParts);
+  const bookText = rarityChanceText(bookParts);
+  if (gearText) lines.push(gearText);
+  if (bookText) lines.push("配方书 " + bookText);
+  return lines.join(" · ");
+}
+function isRecipeBook(drop) {
+  return drop.kind === "item" && (drop.recipe || (drop.flags || []).indexOf("配方书") >= 0);
+}
+function buildRecipes() {
+  const groups = new Map();
+  for (const source of db.sources) {
+    const found = new Map();
+    for (const ref of source.refs || []) {
+      const table = tableByEnum[ref.table];
+      if (!table) continue;
+      for (const drop of flattenDrops(table, 1, 0, new Set())) {
+        if (!isRecipeBook(drop)) continue;
+        const key = String(drop.id);
+        if (!found.has(key)) found.set(key, []);
+        found.get(key).push(drop);
+      }
+    }
+    for (const [key, drops] of found) {
+      let row = groups.get(key);
+      if (!row) {
+        const gear = (db.gear || []).find(g => String(g.id) === key);
+        const item = (db.items || []).find(it => String(it.id) === key);
+        row = {
+          id: drops[0].id,
+          title: (item && item.title) || (gear && gear.title) || drops[0].title,
+          icon: (item && item.icon) || (gear && gear.icon) || drops[0].icon || "",
+          kind: gear ? (gear.slot || "装备") : "材料",
+          sources: [],
+          spawns: [],
+        };
+        groups.set(key, row);
+      }
+      const parts = drops.map(drop => ({ chance: drop.chance, rarities: drop.rarities || [] }));
+      let chance = 0;
+      for (const drop of drops) if (drop.chance > chance) chance = drop.chance;
+      const odds = parts.length > 1 ? rarityChanceText(parts) : formatPct(drops[0].chance);
+      row.sources.push({ source: source, amount: drops[0].amount, odds: odds, chance: chance });
+    }
+  }
+  for (const table of db.dropTables) {
+    for (const entry of table.entries) {
+      if (entry.outcome === 1) continue;
+      const book = entry.outcome === 2 || (entry.flagText || []).indexOf("配方书") >= 0;
+      if (!book) continue;
+      const key = String(entry.item);
+      let row = groups.get(key);
+      if (row && row.sources.some(src => src.source)) continue;
+      if (!row) {
+        const gear = (db.gear || []).find(g => String(g.id) === key);
+        const item = (db.items || []).find(it => String(it.id) === key);
+        row = {
+          id: entry.item,
+          title: (item && item.title) || (gear && gear.title) || entry.itemName || "图纸",
+          icon: (item && item.icon) || (gear && gear.icon) || entry.itemIcon || "",
+          kind: gear ? (gear.slot || "装备") : "材料",
+          sources: [],
+          spawns: [],
+        };
+        groups.set(key, row);
+      }
+      const portion = entryPortion(table, entry);
+      row.sources.push({ source: null, title: table.title || table.enumName, amount: amount(entry), odds: formatPct(portion), chance: portion });
+    }
+  }
+  const rows = [...groups.values()];
+  for (const row of rows) {
+    row.sources.sort((a, b) => b.chance - a.chance);
+    const seen = new Set();
+    for (const src of row.sources) {
+      if (!src.source) continue;
+      for (const point of src.source.spawns || []) {
+        const mark = point.map + "|" + point.left + "|" + point.top;
+        if (seen.has(mark)) continue;
+        seen.add(mark);
+        row.spawns.push(point);
+      }
+    }
+  }
+  return rows;
+}
+const recipes = buildRecipes();
+function recipeFor(id) {
+  return recipes.find(row => String(row.id) === String(id)) || null;
+}
 function amount(entry) {
   if (entry.min === entry.max) return String(entry.min);
   return entry.min + "–" + entry.max;
@@ -2434,7 +2580,7 @@ function rarityText(entry) {
   return entry.rarities.map((v,i) => v ? (db.rarity[i]||("稀有度"+i)) + " " + (v/sum*100).toFixed(0) + "%" : "").filter(Boolean).join(" · ");
 }
 function categoriesFor(kind) {
-  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : kind === "quests" ? (db.quests || []).flatMap(q => q.areas || []) : [];
+  const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : kind === "recipes" ? recipes.map(r => r.kind) : kind === "quests" ? (db.quests || []).flatMap(q => q.areas || []) : [];
   return ["全部", ...[...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh"))];
 }
 function syncCats(preferred) {
@@ -2493,6 +2639,7 @@ function filtered() {
   else if (mode === "characters") rows = (db.characters || []).filter(c => (cat==="全部"||c.origin===cat) && (!q || (c.title+" "+c.role+" "+c.origin+" "+c.description+" "+characterSummary(c)+" "+(c.stats||[]).map(s => s.label+" "+s.value).join(" ")+" "+(c.perks||[]).map(p => p.title).join(" ")).toLowerCase().includes(q)));
   else if (mode === "skills") rows = (db.skills || []).filter(s => (cat==="全部"||s.kind===cat) && (!q || (s.title+" "+s.kind+" "+s.top+" "+s.bottom+" "+(s.owners||[]).map(id => { const character = (db.characters || []).find(c => c.id === id); return character ? character.title : ""; }).join(" ")).toLowerCase().includes(q)));
   else if (mode === "gear") rows = (db.gear || []).filter(g => (cat==="全部"||g.slot===cat) && (!q || (g.title+" "+g.slot+" "+g.description+" "+(g.base||[]).join(" ")+" "+(g.forced||[]).join(" ")+" "+(g.pool||[]).join(" ")).toLowerCase().includes(q)));
+  else if (mode === "recipes") rows = recipes.filter(r => (cat==="全部"||r.kind===cat) && (!q || (r.title+" "+r.kind+" "+r.sources.map(src => src.source ? sourceLabel(src.source) : (src.title || "")).join(" ")).toLowerCase().includes(q)));
   else if (mode === "quests") rows = (db.quests || []).filter(quest => (cat==="全部"||(quest.areas||[]).includes(cat)) && (!q || (quest.title+" "+(quest.description||"")+" "+(quest.handIn||"")+" "+(quest.giver||"")+" "+(quest.turnIn||"")+" "+(quest.areas||[]).join(" ")+" "+(quest.steps||[]).map(step => (step.kind||"")+" "+(step.text||"")+" "+itemTitle(step.item)).join(" ")+" "+(quest.rewards||[]).map(reward => itemTitle(reward.item)).join(" ")).toLowerCase().includes(q)));
   else rows = db.items.filter(it => (!q || (it.title+" "+(it.english||"")+" "+it.name+" "+(it.places||[]).join(" ")+" "+(it.needs||[]).map(n => n.quest+" "+n.kind).join(" ")+" "+(it.salvage||[]).map(s => (s.title||s.pool||"")+" "+(s.rarity||"")).join(" ")).toLowerCase().includes(q)));
   return rows.sort((a, b) => rowTitle(a).localeCompare(rowTitle(b), "zh"));
@@ -2517,7 +2664,7 @@ function renderList() {
   const rows = filtered();
   const body = rows.map((row, i) => {
     const title = rowTitle(row);
-    const sub = mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.pickups||[]).length)+" 个地上物品 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), groundSpots(row.id).length ? (groundSpots(row.id).length+" 处固定搜刮") : "", (row.needs||[]).length ? (row.needs.length+" 个任务需要") : "", (row.salvage||[]).length ? (row.salvage.length+" 个拆解来源") : ""].filter(Boolean).join(" · ");
+    const sub = mode==="recipes" ? [row.kind, row.sources.length+" 个来源", spawnSummary({ spawns: row.spawns })].filter(Boolean).join(" · ") : mode==="quests" ? [row.giver, (row.areas||[]).join("、"), (row.steps||[]).length ? (row.steps.length+" 个目标") : ""].filter(Boolean).join(" · ") : mode==="tables" ? (row.entries.length ? row.entries.length+" 项 · "+row.category : "没有条目") : mode==="sources" ? [row.place || row.refs.map(r=>shown(r.title)).join("、"), combatSummary(row), spawnSummary(row)].filter(Boolean).join(" · ") : mode==="maps" ? ((row.regions||[]).length+" 个区域 · "+(row.entrances||[]).length+" 个入口 · "+row.pins.length+" 个固定搜刮点 · "+((row.pickups||[]).length)+" 个地上物品 · "+((row.npcs||[]).length)+" 个 NPC · "+((row.bosses||[]).length)+" 个固定怪") : mode==="characters" ? [characterSummary(row), row.role || row.origin || ""].filter(Boolean).join(" · ") : mode==="skills" ? [row.kind, row.cooldown != null && db.labels && db.labels.cooldown ? db.labels.cooldown.replace("{0}", row.cooldown) : ""].filter(Boolean).join(" · ") : mode==="gear" ? [row.slot, row.rarity].filter(Boolean).join(" · ") : [(row.places||[]).join("、"), groundSpots(row.id).length ? (groundSpots(row.id).length+" 处固定搜刮") : "", (row.needs||[]).length ? (row.needs.length+" 个任务需要") : "", (row.salvage||[]).length ? (row.salvage.length+" 个拆解来源") : ""].filter(Boolean).join(" · ");
     const img = mode==="items" ? row.icon : mode==="tables" ? portraitOf(row) : mode==="maps" ? row.image : row.icon;
     return '<button class="row" data-i="'+i+'">'+icon(img, title)+'<span><b>'+title+'</b><br><small>'+sub+'</small></span></button>';
   }).join("");
@@ -2553,7 +2700,7 @@ function combatBlock(row) {
   const weak = combat.armor < combat.resist ? "护甲更低，更怕物理伤害。" : combat.resist < combat.armor ? "魔法抗性更低，更怕魔法伤害。" : combat.armor === 0 ? "没有护甲和魔法抗性，物理伤害和魔法伤害都不减免。" : "护甲和魔法抗性相同。";
   const attacks = (combat.attacks || []).map(atk => {
     const hurt = (atk.hits || []).map(hit => hit.kind + " " + text(hit.amount) + (hit.max ? "–" + text(hit.max) : "") + (hit.tick ? " 每跳" : "")).join("、");
-    return "<tr><td>" + esc(atk.title || hurt || "攻击") + "</td><td>" + esc(hurt) + "</td><td>" + esc(cd(atk.cooldown)) + "</td><td>" + esc(atk.range ? text(atk.range) : "") + "</td></tr>";
+    return "<tr><td>" + esc(atk.title || "没有名称") + "</td><td>" + esc(hurt) + "</td><td>" + esc(cd(atk.cooldown)) + "</td><td>" + esc(atk.range ? text(atk.range) : "") + "</td></tr>";
   }).join("");
   return '<h3>属性</h3><table><tbody><tr><td>生命值</td><td>' + text(combat.health) + '</td></tr><tr><td>护甲</td><td>' + text(combat.armor) + '</td></tr><tr><td>魔法抗性</td><td>' + text(combat.resist) + '</td></tr></tbody></table><p class="muted">' + weak + ' 每点护甲或魔法抗性，大约相当于多用 1% 生命去承受对应伤害。这是普通形态，精英、噩梦和庇护所的敌人难度还会再提高生命和伤害。</p>'
     + (attacks ? '<h3>攻击</h3><table><thead><tr><th>技能</th><th>伤害</th><th>冷却</th><th>射程</th></tr></thead><tbody>' + attacks + '</tbody></table>' : '');
@@ -2677,6 +2824,7 @@ function bindJumps(root) {
   root.querySelectorAll("[data-skill]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.skills || []).find(s => s.name === a.dataset.skill); if (row) show("skills", row); });
   root.querySelectorAll("[data-character]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.characters || []).find(c => c.id === a.dataset.character); if (row) show("characters", row); });
   root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
+  root.querySelectorAll("[data-recipe]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = recipeFor(a.dataset.recipe); if (row) show("recipes", row); });
   root.querySelectorAll("[data-map]").forEach(a => a.onclick = (event) => { event.preventDefault(); const map = (db.maps || []).find(m => m.id === a.dataset.map); if (map) show("maps", map); });
 }
 function clearMapZoom() {
@@ -2828,10 +2976,12 @@ function open(row) {
         const what = drop.kind === "table"
           ? (sourceForTable(drop.enumName) ? '<a data-loot="'+drop.enumName+'">'+named(drop.title, drop.enumName)+'</a>' : named(drop.title, drop.enumName))
           : '<a data-item="'+drop.id+'">'+icon(drop.icon, drop.title)+' '+drop.title+'</a>'+(drop.recipe ? ' <span class="tag">配方 '+drop.recipeId+'</span>' : '');
-        const chanceCell = drop.oddsText
+        const fixed = drop.kind === "item" ? fixedRarityOf(drop.id) : "";
+        const chanceCell = (!fixed && drop.oddsText)
           ? drop.oddsText + '<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div>'
           : formatPct(drop.chance)+'<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div>';
-        const extra = (drop.rarity ? drop.rarity + " " : "") + (drop.flags || []).map(flag => '<span class="tag">'+flag+'</span>').join("");
+        const rarityLabel = fixed || (drop.oddsText ? "" : (drop.rarity || ""));
+        const extra = (rarityLabel ? rarityLabel + " " : "") + (drop.flags || []).map(flag => '<span class="tag">'+flag+'</span>').join("");
         return '<tr><td>'+what+'</td><td>'+(drop.amount||"")+'</td><td>'+chanceCell+'</td><td>'+extra+'</td></tr>';
       }).join("");
       return '<h3>'+named((table && table.title) || ref.title, (table && table.enumName) || ref.table)+'</h3>'
@@ -2844,18 +2994,34 @@ function open(row) {
     detailEl.querySelectorAll(".ground-zoom").forEach(bindMapZoom);
   } else if (mode === "items") {
     const from = [];
+    const gearItem = (db.gear || []).some(g => String(g.id) === String(row.id));
     for (const source of db.sources) {
-      let best = null;
+      const drops = [];
       for (const ref of source.refs) {
         const table = tableByEnum[ref.table];
         if (!table) continue;
         for (const drop of flattenDrops(table, 1, 0, new Set())) {
-          if (drop.kind === "item" && String(drop.id) === String(row.id) && (!best || drop.chance > best.chance)) best = drop;
+          if (drop.kind === "item" && String(drop.id) === String(row.id)) drops.push(drop);
         }
       }
-      if (best) from.push({ source, drop: best });
+      if (!drops.length) continue;
+      if (gearItem) {
+        const byAmount = new Map();
+        for (const drop of drops) {
+          const key = drop.amount || "";
+          if (!byAmount.has(key)) byAmount.set(key, []);
+          byAmount.get(key).push(drop);
+        }
+        for (const [amount, parts] of byAmount) {
+          let chance = 0;
+          for (const part of parts) chance += part.chance;
+          from.push({ source, amount, odds: chanceText(parts), chance });
+        }
+      } else {
+        for (const drop of drops) from.push({ source, amount: drop.amount, odds: chanceText([drop]), chance: drop.chance });
+      }
     }
-    from.sort((a, b) => b.drop.chance - a.drop.chance);
+    from.sort((a, b) => b.chance - a.chance);
     const places = (row.places||[]).join("、");
     const needs = row.needs || [];
     const needTable = '<h3>任务需要</h3><table><thead><tr><th>任务</th><th>要求</th><th>数量</th></tr></thead><tbody>'
@@ -2876,12 +3042,17 @@ function open(row) {
       + '</tbody></table>' + (salvage.some(src => src.chance) ? '<p class="muted">有几率的来源是拆解时额外可能开出的，不是每次都有。</p>' : "") : "";
     const ground = groundSpots(row.id);
     const groundTable = ground.length ? '<h3>地图上的固定搜刮</h3>'+groundMaps(ground)+'<p class="muted">方块是场景里写死的位置，每次都在原地，不是箱子里开出来的。</p>' : "";
+    const recipeLink = recipeFor(row.id) ? '<p><a data-recipe="'+row.id+'">查看制作图纸</a></p>' : "";
     const dropTable = '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'
-      + (from.length ? from.map(({source, drop}) => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", source))+'">'+sourceLabel(source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
+      + (from.length ? from.map(hit => '<tr><td><a data-source="'+encodeURIComponent(rowKey("sources", hit.source))+'">'+sourceLabel(hit.source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a></td><td>'+(hit.amount||"")+'</td><td>'+hit.odds+'</td></tr>').join("") : '<tr><td colspan="3" class="muted">没有怪物或搜刮点掉这个</td></tr>')
       + '</tbody></table>';
-    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+(places ? '<div class="muted">地点：'+places+'</div>' : '')+'</div></div>'
+    const placeNote = places && !ground.length ? '<h3>出现区域</h3><p>'+esc(places)+'</p><p class="muted">物品配置里写了这些区域，场景里没有这个物品的固定坐标。</p>' : "";
+    const quality = row.rarity ? '<div class="muted">品质：'+esc(row.rarity)+'</div>' : '';
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+row.title+'</h2>'+quality+(places && ground.length ? '<div class="muted">地点：'+esc(places)+'</div>' : '')+'</div></div>'
+      + placeNote
       + needTable
       + salvageTable
+      + recipeLink
       + groundTable
       + (from.length || !ground.length ? dropTable : "");
     bindJumps(detailEl);
@@ -2963,8 +3134,26 @@ function open(row) {
       + lines(labels.special, row.forced)
       + lines(labels.random, row.pool)
       + (skillLinks ? '<p>'+skillLinks+'</p>' : '')
+      + (recipeFor(row.id) ? '<p><a data-recipe="'+esc(row.id)+'">查看制作图纸</a></p>' : '')
       + (db.items && db.items.some(it => String(it.id) === String(row.id)) ? '<p><a data-item="'+esc(row.id)+'">'+esc(row.title)+'</a></p>' : '');
     bindJumps(detailEl);
+  } else if (mode === "recipes") {
+    const item = (db.items || []).find(it => String(it.id) === String(row.id));
+    const gear = (db.gear || []).find(g => String(g.id) === String(row.id));
+    const made = item ? '<a data-item="'+item.id+'">'+esc(item.title)+'</a>' : gear ? '<a data-gear="'+esc(gear.id)+'">'+esc(gear.title)+'</a>' : esc(row.title);
+    const drops = row.sources.map(src => {
+      const who = src.source
+        ? '<a data-source="'+encodeURIComponent(rowKey("sources", src.source))+'">'+sourceLabel(src.source).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</a>'
+        : esc(src.title || "");
+      return '<tr><td>'+who+'</td><td>'+(src.amount||"")+'</td><td>'+src.odds+'</td></tr>';
+    }).join("");
+    const spots = spawnMaps({ spawns: row.spawns });
+    detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+esc(row.title)+'</h2><div class="muted">制作图纸'+(row.kind ? " · "+esc(row.kind) : "")+'</div><p>做成 '+made+'</p></div></div>'
+      + '<h3>哪里掉</h3><table><thead><tr><th>来源</th><th>数量</th><th>几率</th></tr></thead><tbody>'+(drops || '<tr><td colspan="3" class="muted">没有找到掉落</td></tr>')+'</tbody></table>'
+      + '<p class="muted">这里的几率是掉落这张图纸的几率，不是直接掉成品。</p>'
+      + (spots ? '<h3>来源可能出现的位置</h3>'+spots+'<p class="muted">点标的是会掉这张图纸的怪物或箱子可能刷新的位置，不是图纸摆在地上的坐标。</p>' : '<p class="muted">这些来源没有写明刷新点。</p>');
+    bindJumps(detailEl);
+    detailEl.querySelectorAll(".ground-zoom").forEach(bindMapZoom);
   } else if (mode === "maps") {
     const colors = ["#e2b15a", "#7dcea0", "#8eb6ff", "#e07a7a", "#c39bd3", "#f0b27a", "#76d7c4", "#f7dc6f", "#85c1e9", "#f5b7b1"];
     const regionColors = ["#7dcea0", "#8eb6ff", "#e2b15a", "#e07a7a", "#c39bd3", "#f0b27a", "#76d7c4", "#f7dc6f", "#85c1e9", "#f5b7b1", "#abebc6", "#d7bde2"];
@@ -3200,6 +3389,7 @@ function rowKey(kind, row) {
   if (kind === "skills") return "k:" + row.name;
   if (kind === "gear") return "g:" + row.id;
   if (kind === "quests") return "q:" + row.id;
+  if (kind === "recipes") return "r:" + row.id;
   return "m:" + (row.image || row.title);
 }
 function rowByKey(key) {
@@ -3219,6 +3409,7 @@ function rowByKey(key) {
   if (kind === "k") return (db.skills || []).find(s => s.name === rest) || null;
   if (kind === "g") return (db.gear || []).find(g => String(g.id) === rest) || null;
   if (kind === "q") return (db.quests || []).find(q => q.id === rest) || null;
+  if (kind === "r") return recipeFor(rest);
   return (db.maps || []).find(m => m.image === rest || m.title === rest) || null;
 }
 function viewState() {
@@ -3232,7 +3423,7 @@ function decodeState(hash) {
   if (!raw) return null;
   const parts = raw.split("/");
   const nextMode = parts[0];
-  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "quests", "dps", "rules"].includes(nextMode)) return null;
+  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "quests", "recipes", "dps", "rules"].includes(nextMode)) return null;
   let id = "";
   let q = "";
   let cat = "全部";
@@ -3353,6 +3544,7 @@ document.getElementById("tab-characters").onclick = () => setMode("characters");
 document.getElementById("tab-skills").onclick = () => setMode("skills");
 document.getElementById("tab-gear").onclick = () => setMode("gear");
 document.getElementById("tab-items").onclick = () => setMode("items");
+document.getElementById("tab-recipes").onclick = () => setMode("recipes");
 document.getElementById("tab-quests").onclick = () => setMode("quests");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
 document.getElementById("tab-rules").onclick = () => setMode("rules");
