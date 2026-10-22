@@ -496,7 +496,24 @@ function renderVisual(name, index, options) {
   const kept = options && options.dropDiscs ? cullPortrait(parts) : cullParts(parts);
   const png = paint(kept);
   if (!png) return { error: "blank" };
+  flipPngHorizontal(png);
   return { png, parts: parts.length, textured: parts.filter((p) => p.tex).length };
+}
+
+function flipPngHorizontal(png) {
+  const width = png.width;
+  const height = png.height;
+  const src = Buffer.from(png.data);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const from = (y * width + x) * 4;
+      const to = (y * width + (width - 1 - x)) * 4;
+      png.data[to] = src[from];
+      png.data[to + 1] = src[from + 1];
+      png.data[to + 2] = src[from + 2];
+      png.data[to + 3] = src[from + 3];
+    }
+  }
 }
 
 function fillCreaturePortraits(sources) {

@@ -258,18 +258,10 @@ function decodeElements(bytes, length) {
   return out;
 }
 
-function rotate180(rgba, width, height) {
+function flipVertical(rgba, width, height) {
   const out = Buffer.alloc(rgba.length);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const src = (y * width + x) * 4;
-      const dst = ((height - 1 - y) * width + (width - 1 - x)) * 4;
-      out[dst] = rgba[src];
-      out[dst + 1] = rgba[src + 1];
-      out[dst + 2] = rgba[src + 2];
-      out[dst + 3] = rgba[src + 3];
-    }
-  }
+  const stride = width * 4;
+  for (let y = 0; y < height; y++) rgba.copy(out, (height - 1 - y) * stride, y * stride, (y + 1) * stride);
   return out;
 }
 
@@ -760,7 +752,7 @@ function main() {
       continue;
     }
     const png = new PNG({ width: value.m_Width, height: value.m_Height });
-    png.data = rotate180(rgba, value.m_Width, value.m_Height);
+    png.data = flipVertical(rgba, value.m_Width, value.m_Height);
     fs.writeFileSync(path.join(iconDir, file), PNG.sync.write(png));
     exported++;
   }
@@ -807,7 +799,7 @@ function main() {
       if (!size || offset + size > portraitRes.length) continue;
       const rgba = decodeTexture(value.m_TextureFormat, portraitRes.subarray(offset, offset + size), value.m_Width, value.m_Height);
       if (!rgba) continue;
-      const upright = rotate180(rgba, value.m_Width, value.m_Height);
+      const upright = flipVertical(rgba, value.m_Width, value.m_Height);
       const png = new PNG({ width: value.m_Width, height: value.m_Height });
       png.data = upright;
       fs.writeFileSync(outPath, PNG.sync.write(png));
@@ -1743,6 +1735,9 @@ function writeHtml(db) {
   .pin { position:absolute; z-index:2; width:12px; height:12px; margin:0; padding:0; border:1px solid #111; border-radius:50%; transform:translate(-50%,-50%); cursor:pointer; }
   .ground { position:absolute; z-index:3; width:12px; height:12px; margin:0; padding:0; border:2px solid #111; border-radius:2px; transform:translate(-50%,-50%); cursor:pointer; }
   .pin.maybe { background:transparent; border-style:dashed; border-width:2px; }
+  .ground-zoom { max-width:560px; margin:8px 0 12px; }
+  .ground-zoom .mapwrap { max-width:none; margin-top:0; }
+  .ground-zoom .spawn-map { max-width:none; margin:0; }
   .spawn-map { position:relative; max-width:560px; margin:8px 0 4px; }
   .spawn-map img { width:100%; display:block; }
   .spawn-map svg { position:absolute; inset:0; width:100%; height:100%; }
@@ -1777,14 +1772,14 @@ function writeHtml(db) {
   main.dps-mode #dps { display: block; overflow: auto; }
   .dps p { margin:6px 0 8px; }
   .dps-sets { display:flex; flex-wrap:wrap; gap:18px 28px; }
-  .dps-set { display:grid; grid-template-columns:5.5em 7.5em; gap:6px 8px; align-items:center; }
+  .dps-set { display:grid; grid-template-columns:6.8em 7.5em; gap:6px 8px; align-items:center; }
   .dps-head { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .dps-apply { display:flex; align-items:center; gap:6px; }
   .dps-apply select { min-width:0; width:auto; padding:2px 4px; font:inherit; font-size:12px; }
   .dps-copy { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); border-radius:8px; padding:2px 8px; font:inherit; font-size:12px; }
   .dps-copy:hover { border-color:var(--accent); color:var(--accent); }
   .dps input { min-width:0; width:100%; padding:6px 8px; }
-  #dps-out { max-width:640px; margin-top:8px; }
+  #dps-out { max-width:980px; margin-top:8px; }
   #dps-out tr.best td, #opt-out tr.best td { color:var(--good); font-weight:700; }
   .opt-base, .opt-item, .opt-slot-head, .opt-actions { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
   .opt-slot { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0; max-width:980px; }
@@ -1796,7 +1791,7 @@ function writeHtml(db) {
   .opt-item input[type="number"], .opt-base input { width:5.5em; }
   .opt-btn { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); border-radius:8px; padding:6px 10px; font:inherit; }
   .opt-btn:hover { border-color:var(--accent); color:var(--accent); }
-  #opt-out { max-width:980px; margin-top:8px; }
+  #opt-out { max-width:1180px; margin-top:8px; }
   #rules { display:none; }
   main.rules-mode { grid-template-columns: 1fr; }
   main.rules-mode aside, main.rules-mode #detail, main.rules-mode #dps { display:none; }
@@ -1841,7 +1836,7 @@ function writeHtml(db) {
   <section id="detail"></section>
   <section id="dps" class="dps">
     <h2>基础攻击速算</h2>
-    <p class="muted">填面板上的数字，最多对比 3 套。暴击伤害 215 表示暴击打出 2.15 倍。攻击速度 1 是正常出手，2 表示基础攻击次数翻倍，留空按 1 算。相对每秒按同一把武器的基础攻速比较，只覆盖基础攻击。</p>
+    <p class="muted">填面板上的数字，最多对比 3 套。暴击伤害 215 表示暴击打出 2.15 倍。攻击速度 1 是正常出手，2 表示基础攻击次数翻倍，留空按 1 算。对小兵伤害、对Boss伤害填百分比，18 表示打这类目标时最终伤害再乘 1.18，两项分开算，不叠在同一次攻击上，留空按 0。相对每秒按同一把武器的基础攻速比较，只覆盖基础攻击。</p>
     <div class="dps-sets">
       <div class="dps-set">
         <div class="dps-head"><b>第 1 套</b><span class="dps-apply"><select class="dps-from"><option value="1">第 2 套</option><option value="2">第 3 套</option></select><button type="button" class="dps-copy" data-to="0">套用</button></span></div>
@@ -1849,6 +1844,8 @@ function writeHtml(db) {
         <span>暴击率</span><input id="dps-0-crit" type="number" value="28" step="any" />
         <span>暴击伤害</span><input id="dps-0-critd" type="number" value="215" step="any" />
         <span>攻击速度</span><input id="dps-0-spd" type="number" value="1" step="any" />
+        <span>对小兵伤害</span><input id="dps-0-minion" type="number" step="any" />
+        <span>对Boss伤害</span><input id="dps-0-boss" type="number" step="any" />
       </div>
       <div class="dps-set">
         <div class="dps-head"><b>第 2 套</b><span class="dps-apply"><select class="dps-from"><option value="0">第 1 套</option><option value="2">第 3 套</option></select><button type="button" class="dps-copy" data-to="1">套用</button></span></div>
@@ -1856,6 +1853,8 @@ function writeHtml(db) {
         <span>暴击率</span><input id="dps-1-crit" type="number" value="33" step="any" />
         <span>暴击伤害</span><input id="dps-1-critd" type="number" value="215" step="any" />
         <span>攻击速度</span><input id="dps-1-spd" type="number" value="1" step="any" />
+        <span>对小兵伤害</span><input id="dps-1-minion" type="number" step="any" />
+        <span>对Boss伤害</span><input id="dps-1-boss" type="number" step="any" />
       </div>
       <div class="dps-set">
         <div class="dps-head"><b>第 3 套</b><span class="dps-apply"><select class="dps-from"><option value="0">第 1 套</option><option value="1">第 2 套</option></select><button type="button" class="dps-copy" data-to="2">套用</button></span></div>
@@ -1863,17 +1862,21 @@ function writeHtml(db) {
         <span>暴击率</span><input id="dps-2-crit" type="number" step="any" />
         <span>暴击伤害</span><input id="dps-2-critd" type="number" step="any" />
         <span>攻击速度</span><input id="dps-2-spd" type="number" placeholder="1" step="any" />
+        <span>对小兵伤害</span><input id="dps-2-minion" type="number" step="any" />
+        <span>对Boss伤害</span><input id="dps-2-boss" type="number" step="any" />
       </div>
     </div>
     <table id="dps-out"></table>
     <p id="dps-note" class="muted"></p>
     <h2 style="margin-top:28px">装备穷举</h2>
-    <p class="muted">部位是固定的。勾选你有的候选，页面会把勾中的组合算一遍。常驻的额外攻击、额外攻速一直算在里面。限时增益按覆盖时间加权，覆盖时间是持续秒数除以冷却秒数。下面是妮弭拉的例子：基础攻击 70、暴击率 5%、暴击伤害 175%、攻速 1，特性额外攻击 30、额外攻速 0.33。默认增益是额外攻击 50、额外攻速 0.5，持续 4 秒、冷却 9 秒，可以改成你测到的数字。暴击伤害 25 表示再加 25%。攻速 0.25 表示再快 25%。只覆盖基础攻击。</p>
+    <p class="muted">部位是固定的。勾选你有的候选，页面会把勾中的组合算一遍。常驻的额外攻击、额外攻速一直算在里面。限时增益按覆盖时间加权，覆盖时间是持续秒数除以冷却秒数。对小兵伤害、对Boss伤害填百分比，先把同一项加总，再分别乘到最终伤害上，不叠在同一次攻击里。下面是妮弭拉的例子：基础攻击 70、暴击率 5%、暴击伤害 175%、攻速 1，特性额外攻击 30、额外攻速 0.33。默认增益是额外攻击 50、额外攻速 0.5，持续 4 秒、冷却 9 秒，可以改成你测到的数字。暴击伤害 25 表示再加 25%。攻速 0.25 表示再快 25%。只覆盖基础攻击。</p>
     <div class="opt-base">
       <span>攻击</span><input id="opt-atk" type="number" value="70" step="any" />
       <span>暴击率</span><input id="opt-crit" type="number" value="5" step="any" />
       <span>暴击伤害</span><input id="opt-critd" type="number" value="175" step="any" />
       <span>攻速</span><input id="opt-spd" type="number" value="1" step="any" />
+      <span>对小兵伤害</span><input id="opt-minion" type="number" step="any" />
+      <span>对Boss伤害</span><input id="opt-boss" type="number" step="any" />
       <span>额外攻击</span><input id="opt-extra-atk" type="number" value="30" step="any" />
       <span>额外攻速</span><input id="opt-extra-spd" type="number" value="0.33" step="any" />
     </div>
@@ -1988,8 +1991,13 @@ const db = JSON.parse(document.getElementById("db").textContent);
     const chance = Math.min(100, Math.max(0, crit == null ? 0 : crit)) / 100;
     const mult = (critd == null ? 100 : critd) / 100;
     const rate = Math.max(0, spd == null ? 1 : spd);
+    const minionPct = num("dps-" + i + "-minion");
+    const bossPct = num("dps-" + i + "-boss");
+    const minion = minionPct == null ? 0 : minionPct;
+    const boss = bossPct == null ? 0 : bossPct;
     const hit = atk * (1 - chance + chance * mult);
-    return { hit: hit, critHit: atk * mult, dps: hit * rate };
+    const dps = hit * rate;
+    return { hit: hit, critHit: atk * mult, dps: dps, minionDps: dps * (1 + minion / 100), bossDps: dps * (1 + boss / 100), minion: minion, boss: boss };
   }
   function fmt(n) {
     return (Math.round(n * 10) / 10).toString();
@@ -2003,9 +2011,9 @@ const db = JSON.parse(document.getElementById("db").textContent);
       if (!row) return "";
       const pct = first && first.dps ? Math.round(row.dps / first.dps * 1000) / 10 : "";
       const mark = best != null && row.dps === best ? " class='best'" : "";
-      return "<tr" + mark + "><td>第 " + (i + 1) + " 套</td><td>" + fmt(row.hit) + "</td><td>" + fmt(row.critHit) + "</td><td>" + fmt(row.dps) + "</td><td>" + (pct === "" ? "" : pct + "%") + "</td></tr>";
+      return "<tr" + mark + "><td>第 " + (i + 1) + " 套</td><td>" + fmt(row.hit) + "</td><td>" + fmt(row.critHit) + "</td><td>" + fmt(row.dps) + "</td><td>" + fmt(row.minionDps) + "</td><td>" + fmt(row.bossDps) + "</td><td>" + (pct === "" ? "" : pct + "%") + "</td></tr>";
     }).join("");
-    document.getElementById("dps-out").innerHTML = "<thead><tr><th></th><th>单次期望</th><th>暴击一下</th><th>相对每秒</th><th>对比第 1 套</th></tr></thead><tbody>" + body + "</tbody>";
+    document.getElementById("dps-out").innerHTML = "<thead><tr><th></th><th>单次期望</th><th>暴击一下</th><th>相对每秒</th><th>对小兵每秒</th><th>对Boss每秒</th><th>对比第 1 套</th></tr></thead><tbody>" + body + "</tbody>";
     const filled = rows.map((row, i) => row ? i : -1).filter(i => i >= 0);
     const winners = filled.filter(i => rows[i].dps === best);
     const note = document.getElementById("dps-note");
@@ -2014,6 +2022,17 @@ const db = JSON.parse(document.getElementById("db").textContent);
     else {
       const others = filled.filter(i => i !== winners[0] && rows[i].dps > 0).map(i => "第 " + (i + 1) + " 套高 " + fmt((rows[winners[0]].dps / rows[i].dps - 1) * 100) + "%");
       note.textContent = "第 " + (winners[0] + 1) + " 套的相对每秒伤害最高" + (others.length ? "，比" + others.join("，比") : "") + "。";
+    }
+    const split = rows.some(row => row && (row.minion || row.boss));
+    if (split && note.textContent) {
+      function topText(label, key) {
+        let top = null;
+        filled.forEach(function (i) { if (top == null || rows[i][key] > rows[top][key]) top = i; });
+        const ties = filled.filter(function (i) { return rows[i][key] === rows[top][key]; });
+        if (ties.length > 1) return ties.map(function (i) { return "第 " + (i + 1) + " 套"; }).join("、") + " 的" + label + "同为 " + fmt(rows[top][key]) + "。";
+        return "第 " + (top + 1) + " 套的" + label + "最高，是 " + fmt(rows[top][key]) + "。";
+      }
+      note.textContent += topText("对小兵每秒", "minionDps") + topText("对Boss每秒", "bossDps");
     }
   }
   function optNum(el) {
@@ -2025,12 +2044,14 @@ const db = JSON.parse(document.getElementById("db").textContent);
     return n ? String(n) : "";
   }
   function optItemHtml(item) {
-    const row = item || { name: "", atk: 0, crit: 0, cd: 0, as: 0 };
+    const row = item || { name: "", atk: 0, crit: 0, cd: 0, as: 0, minion: 0, boss: 0 };
     return '<div class="opt-item"><input class="opt-use" type="checkbox" checked><input class="opt-item-name" value="' + String(row.name || "").replace(/"/g, "") + '">' +
       '<input class="opt-item-atk" type="number" step="any" placeholder="攻击" value="' + optVal(row.atk) + '">' +
       '<input class="opt-item-crit" type="number" step="any" placeholder="暴击率" value="' + optVal(row.crit) + '">' +
       '<input class="opt-item-cd" type="number" step="any" placeholder="爆伤" value="' + optVal(row.cd) + '">' +
       '<input class="opt-item-as" type="number" step="any" placeholder="攻速" value="' + optVal(row.as) + '">' +
+      '<input class="opt-item-minion" type="number" step="any" placeholder="小兵%" value="' + optVal(row.minion) + '">' +
+      '<input class="opt-item-boss" type="number" step="any" placeholder="Boss%" value="' + optVal(row.boss) + '">' +
       '<button type="button" class="opt-btn opt-del-item">删除</button></div>';
   }
   function optBuffHtml(buff) {
@@ -2056,6 +2077,8 @@ const db = JSON.parse(document.getElementById("db").textContent);
     if (item.crit) bits.push(item.crit + "%暴击");
     if (item.cd) bits.push(item.cd + "%爆伤");
     if (item.as) bits.push(Math.round(item.as * 1000) / 10 + "%攻速");
+    if (item.minion) bits.push(item.minion + "%小兵");
+    if (item.boss) bits.push(item.boss + "%Boss");
     return bits.join(" ") || ("候选" + (index + 1));
   }
   function optFmt(n) {
@@ -2066,6 +2089,8 @@ const db = JSON.parse(document.getElementById("db").textContent);
     const baseCrit = optNum(document.getElementById("opt-crit"));
     const baseCd = optNum(document.getElementById("opt-critd"));
     const baseSpd = optNum(document.getElementById("opt-spd"));
+    const baseMinion = optNum(document.getElementById("opt-minion"));
+    const baseBoss = optNum(document.getElementById("opt-boss"));
     const extraAtk = optNum(document.getElementById("opt-extra-atk"));
     const extraSpd = optNum(document.getElementById("opt-extra-spd"));
     const buffs = [];
@@ -2095,15 +2120,17 @@ const db = JSON.parse(document.getElementById("db").textContent);
           atk: optNum(row.querySelector(".opt-item-atk")),
           crit: optNum(row.querySelector(".opt-item-crit")),
           cd: optNum(row.querySelector(".opt-item-cd")),
-          as: optNum(row.querySelector(".opt-item-as"))
+          as: optNum(row.querySelector(".opt-item-as")),
+          minion: optNum(row.querySelector(".opt-item-minion")),
+          boss: optNum(row.querySelector(".opt-item-boss"))
         };
-        if (!item.name && !item.atk && !item.crit && !item.cd && !item.as) return;
+        if (!item.name && !item.atk && !item.crit && !item.cd && !item.as && !item.minion && !item.boss) return;
         item.label = slotName + " " + optItemLabel(item, index);
         items.push(item);
       });
       if (items.length) slots.push(items);
     });
-    let combos = [{ atk: 0, crit: 0, cd: 0, as: 0, picks: [] }];
+    let combos = [{ atk: 0, crit: 0, cd: 0, as: 0, minion: 0, boss: 0, picks: [] }];
     let capped = false;
     slots.forEach(function (items) {
       if (capped) return;
@@ -2116,6 +2143,8 @@ const db = JSON.parse(document.getElementById("db").textContent);
             crit: combo.crit + item.crit,
             cd: combo.cd + item.cd,
             as: combo.as + item.as,
+            minion: combo.minion + item.minion,
+            boss: combo.boss + item.boss,
             picks: combo.picks.concat(item.label)
           });
         });
@@ -2126,6 +2155,8 @@ const db = JSON.parse(document.getElementById("db").textContent);
     const ranked = combos.map(function (combo) {
       const crit = baseCrit + combo.crit;
       const cd = baseCd + combo.cd;
+      const minionMult = 1 + (baseMinion + combo.minion) / 100;
+      const bossMult = 1 + (baseBoss + combo.boss) / 100;
       const chance = Math.min(100, Math.max(0, crit)) / 100;
       const mult = cd / 100;
       const states = 1 << buffs.length;
@@ -2146,7 +2177,7 @@ const db = JSON.parse(document.getElementById("db").textContent);
         if (mask === 0) calm = dps;
         if (mask === states - 1) hot = dps;
       }
-      return { crit: crit, cd: cd, calm: calm, hot: hot, dps: weighted, picks: combo.picks };
+      return { crit: crit, cd: cd, calm: calm, hot: hot, dps: weighted, minionDps: weighted * minionMult, bossDps: weighted * bossMult, calmMinion: calm * minionMult, hotMinion: hot * minionMult, calmBoss: calm * bossMult, hotBoss: hot * bossMult, picks: combo.picks };
     }).sort(function (a, b) { return b.dps - a.dps; });
     const best = ranked[0];
     const shown = ranked.slice(0, 8);
@@ -2154,11 +2185,22 @@ const db = JSON.parse(document.getElementById("db").textContent);
     if (!best) note.textContent = "";
     else {
       const cover = buffs.map(function (buff) { return buff.name + " 覆盖 " + optFmt(buff.u * 100) + "%（持续 " + optFmt(buff.dur) + " 秒，冷却 " + optFmt(buff.cd) + " 秒）"; }).join("；");
-      note.textContent = "算了 " + ranked.length + " 种搭配。" + (capped ? "再往后组合超过 20 万，没有继续算。" : "") + (cover ? cover + "。" : "") + (buffIgnored ? "有增益没填持续和冷却，没有计入。" : "") + "加权每秒伤害 " + optFmt(best.dps) + "。平时 " + optFmt(best.calm) + "，增益全开 " + optFmt(best.hot) + "。暴击率 " + optFmt(best.crit) + "%，暴击伤害 " + optFmt(best.cd) + "%。";
+      let extra = "";
+      if (ranked.some(function (row) { return row.minionDps !== row.dps || row.bossDps !== row.dps; })) {
+        let bestMinion = ranked[0];
+        let bestBoss = ranked[0];
+        ranked.forEach(function (row) {
+          if (row.minionDps > bestMinion.minionDps) bestMinion = row;
+          if (row.bossDps > bestBoss.bossDps) bestBoss = row;
+        });
+        function pickText(row) { return row.picks.join("、") || "只算基础"; }
+        extra = "对小兵加权最高 " + optFmt(bestMinion.minionDps) + "（平时 " + optFmt(bestMinion.calmMinion) + "，全开 " + optFmt(bestMinion.hotMinion) + "，" + pickText(bestMinion) + "）。对Boss加权最高 " + optFmt(bestBoss.bossDps) + "（平时 " + optFmt(bestBoss.calmBoss) + "，全开 " + optFmt(bestBoss.hotBoss) + "，" + pickText(bestBoss) + "）。";
+      }
+      note.textContent = "算了 " + ranked.length + " 种搭配。" + (capped ? "再往后组合超过 20 万，没有继续算。" : "") + (cover ? cover + "。" : "") + (buffIgnored ? "有增益没填持续和冷却，没有计入。" : "") + "加权每秒伤害 " + optFmt(best.dps) + "。平时 " + optFmt(best.calm) + "，增益全开 " + optFmt(best.hot) + "。暴击率 " + optFmt(best.crit) + "%，暴击伤害 " + optFmt(best.cd) + "%。" + extra;
     }
-    document.getElementById("opt-out").innerHTML = "<thead><tr><th></th><th>搭配</th><th>暴击率</th><th>暴击伤害</th><th>平时每秒</th><th>增益全开</th><th>加权每秒</th><th>对比最高</th></tr></thead><tbody>" + shown.map(function (row, i) {
+    document.getElementById("opt-out").innerHTML = "<thead><tr><th></th><th>搭配</th><th>暴击率</th><th>暴击伤害</th><th>平时每秒</th><th>增益全开</th><th>加权每秒</th><th>对小兵每秒</th><th>对Boss每秒</th><th>对比最高</th></tr></thead><tbody>" + shown.map(function (row, i) {
       const pct = best && best.dps ? Math.round(row.dps / best.dps * 1000) / 10 : "";
-      return "<tr" + (i === 0 ? " class='best'" : "") + "><td>第 " + (i + 1) + " 套</td><td>" + (row.picks.map(function (text) { return String(text).replace(/[&<>]/g, function (ch) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]; }); }).join("、") || "只算基础") + "</td><td>" + optFmt(row.crit) + "%</td><td>" + optFmt(row.cd) + "%</td><td>" + optFmt(row.calm) + "</td><td>" + optFmt(row.hot) + "</td><td>" + optFmt(row.dps) + "</td><td>" + pct + "%</td></tr>";
+      return "<tr" + (i === 0 ? " class='best'" : "") + "><td>第 " + (i + 1) + " 套</td><td>" + (row.picks.map(function (text) { return String(text).replace(/[&<>]/g, function (ch) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]; }); }).join("、") || "只算基础") + "</td><td>" + optFmt(row.crit) + "%</td><td>" + optFmt(row.cd) + "%</td><td>" + optFmt(row.calm) + "</td><td>" + optFmt(row.hot) + "</td><td>" + optFmt(row.dps) + "</td><td>" + optFmt(row.minionDps) + "</td><td>" + optFmt(row.bossDps) + "</td><td>" + pct + "%</td></tr>";
     }).join("") + "</tbody>";
   }
   document.getElementById("dps").addEventListener("input", function () { renderDps(); renderOpt(); });
@@ -2190,7 +2232,7 @@ const db = JSON.parse(document.getElementById("db").textContent);
     const to = btn.getAttribute("data-to");
     const pick = btn.parentNode.querySelector(".dps-from");
     const from = pick ? pick.value : "0";
-    ["atk", "crit", "critd", "spd"].forEach(function (key) {
+    ["atk", "crit", "critd", "spd", "minion", "boss"].forEach(function (key) {
       const src = document.getElementById("dps-" + from + "-" + key);
       const dst = document.getElementById("dps-" + to + "-" + key);
       if (src && dst) dst.value = src.value;
@@ -2209,7 +2251,7 @@ let mode = "tables";
 let current = null;
 let historyLock = false;
 let appliedUrl = "";
-let mapObserver = null;
+let mapObservers = [];
 const lastByMode = { tables: null, sources: null, items: null, maps: null, characters: null, skills: null, gear: null };
 const listScroll = {};
 function icon(src, alt) {
@@ -2309,10 +2351,78 @@ function flattenDrops(table, mul, depth, seen) {
       if (child && child.entries.length) rows.push(...flattenDrops(child, portion, depth + 1, nextSeen));
       else rows.push({ kind: "table", title: (child && child.title) || entry.nestedName || "子表", enumName: (child && child.enumName) || entry.nestedEnum || "", chance: portion, amount: amount(entry) });
     } else {
-      rows.push({ kind: "item", id: entry.item, title: entry.itemName || "物品", icon: entry.itemIcon, chance: portion, amount: amount(entry), rarity: rarityText(entry), flags: entry.flagText || [], recipe: entry.outcome === 2, recipeId: entry.recipe });
+      rows.push({ kind: "item", id: entry.item, title: entry.itemName || "物品", icon: entry.itemIcon, chance: portion, amount: amount(entry), rarity: rarityText(entry), rarities: entry.rarities || [], flags: entry.flagText || [], recipe: entry.outcome === 2, recipeId: entry.recipe });
     }
   }
   return rows;
+}
+function mergeGearDrops(drops) {
+  const gearIds = {};
+  for (const gear of db.gear || []) gearIds[String(gear.id)] = true;
+  const out = [];
+  const groups = new Map();
+  for (const drop of drops) {
+    if (drop.kind !== "item" || !gearIds[String(drop.id)]) {
+      out.push(drop);
+      continue;
+    }
+    const key = String(drop.id) + "|" + drop.amount;
+    let group = groups.get(key);
+    if (!group) {
+      group = { kind: "item", id: drop.id, title: drop.title, icon: drop.icon, chance: 0, amount: drop.amount, rarity: drop.rarity, flags: drop.flags, recipe: false, count: 0, parts: [] };
+      groups.set(key, group);
+      out.push(group);
+    }
+    group.count++;
+    group.chance += drop.chance;
+    group.parts.push({
+      chance: drop.chance,
+      rarities: drop.rarities || [],
+      flags: drop.flags || [],
+      recipe: !!(drop.recipe || (drop.flags || []).indexOf("配方书") >= 0),
+    });
+  }
+  for (const group of groups.values()) {
+    if (group.count < 2) continue;
+    const gearParts = [];
+    const bookParts = [];
+    for (const part of group.parts) (part.recipe ? bookParts : gearParts).push(part);
+    const gearText = rarityChanceText(gearParts);
+    const bookText = rarityChanceText(bookParts);
+    const lines = [];
+    if (gearText) lines.push(gearText);
+    if (bookText) lines.push("配方书 " + bookText);
+    group.oddsText = lines.join(" · ");
+    group.rarity = "";
+    const base = gearParts.length ? gearParts : bookParts;
+    const shared = [];
+    for (const flag of (base[0] && base[0].flags) || []) {
+      if (flag === "配方书") continue;
+      if (base.every(part => part.flags.indexOf(flag) >= 0)) shared.push(flag);
+    }
+    group.flags = shared;
+  }
+  return out;
+}
+function rarityChanceText(parts) {
+  const shares = [];
+  let plain = 0;
+  for (const part of parts) {
+    const weights = part.rarities || [];
+    const sum = weights.reduce((total, value) => total + value, 0);
+    if (!sum) { plain += part.chance; continue; }
+    for (let i = 0; i < weights.length; i++) {
+      if (!weights[i]) continue;
+      shares[i] = (shares[i] || 0) + part.chance * weights[i] / sum;
+    }
+  }
+  const bits = [];
+  for (let i = 0; i < shares.length; i++) {
+    if (!shares[i]) continue;
+    bits.push((db.rarity[i] || ("稀有度" + i)) + " " + formatPct(shares[i]));
+  }
+  if (plain) bits.push(formatPct(plain));
+  return bits.join(" · ");
 }
 function amount(entry) {
   if (entry.min === entry.max) return String(entry.min);
@@ -2489,7 +2599,7 @@ function spawnMaps(row) {
     const routes = here.filter(point => (point.path || []).length >= 2).map(point => '<polyline class="route" points="'+point.path.map(p => p.left+","+p.top).join(" ")+'"></polyline>').join("");
     const svg = routes ? '<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+routes+'</svg>' : "";
     const routeNote = routes ? " 虚线是巡逻路线。" : "";
-    return '<div class="spawn-map"><img alt="'+esc(map.title)+'" src="'+map.image+'">'+svg+dots+'</div><p class="muted">'+esc(map.title)+'，可能刷新 '+here.length+' 处。一局里不一定每处都会出现。'+routeNote+'</p>';
+    return '<div class="ground-zoom"><div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage spawn-map"><img draggable="false" alt="'+esc(map.title)+'" src="'+map.image+'">'+svg+dots+'</div><div class="mapsizer"></div></div><p class="muted">'+esc(map.title)+'，可能刷新 '+here.length+' 处。一局里不一定每处都会出现。'+routeNote+'</p></div>';
   }).join("");
 }
 function groundMaps(spots) {
@@ -2511,7 +2621,7 @@ function groundMaps(spots) {
       group.count++;
     }
     const detail = amounts.map(group => group.count + " 处 ×" + group.amount).join("，");
-    return '<div class="spawn-map"><img alt="'+esc(map.title)+'" src="'+map.image+'">'+dots+'</div><p class="muted"><a data-map="'+esc(map.id)+'">'+esc(map.title)+'</a>，固定出现 '+detail+'。</p>';
+    return '<div class="ground-zoom"><div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage spawn-map"><img draggable="false" alt="'+esc(map.title)+'" src="'+map.image+'">'+dots+'</div><div class="mapsizer"></div></div><p class="muted"><a data-map="'+esc(map.id)+'">'+esc(map.title)+'</a>，固定出现 '+detail+'。</p></div>';
   }).join("");
 }
 function portraitOf(table) {
@@ -2569,7 +2679,126 @@ function bindJumps(root) {
   root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
   root.querySelectorAll("[data-map]").forEach(a => a.onclick = (event) => { event.preventDefault(); const map = (db.maps || []).find(m => m.id === a.dataset.map); if (map) show("maps", map); });
 }
+function clearMapZoom() {
+  for (const observer of mapObservers) observer.disconnect();
+  mapObservers = [];
+}
+function bindMapZoom(box) {
+  const mapwrap = box.querySelector(".mapwrap");
+  const mapstage = box.querySelector(".mapstage");
+  const mapsizer = box.querySelector(".mapsizer");
+  const zoomReadout = box.querySelector(".zoom-readout");
+  const zoomIn = box.querySelector('[data-zoom="in"]');
+  const zoomOut = box.querySelector('[data-zoom="out"]');
+  const zoomReset = box.querySelector('[data-zoom="reset"]');
+  if (!mapwrap || !mapstage || !mapsizer || !zoomReadout || !zoomIn || !zoomOut || !zoomReset) return;
+  const mapImg = mapstage.querySelector("img");
+  let scale = 1;
+  let fitted = "";
+  const minScale = 1;
+  const maxScale = 8;
+  function applyScale(next, anchor) {
+    const prev = scale || 1;
+    scale = Math.min(maxScale, Math.max(minScale, next));
+    zoomReadout.textContent = Math.round(scale * 100) + "%";
+    zoomIn.disabled = scale >= maxScale - 0.001;
+    zoomOut.disabled = scale <= minScale + 0.001;
+    const viewW = mapwrap.clientWidth;
+    if (!viewW || !mapImg.naturalWidth) return;
+    const baseH = Math.max(1, Math.round(viewW * mapImg.naturalHeight / mapImg.naturalWidth));
+    const boxSize = viewW + "x" + baseH + "@" + scale;
+    if (!anchor && boxSize === fitted) return;
+    fitted = boxSize;
+    let ax = 0;
+    let ay = 0;
+    let localX = 0;
+    let localY = 0;
+    if (anchor) {
+      const rect = mapwrap.getBoundingClientRect();
+      ax = anchor.x - rect.left;
+      ay = anchor.y - rect.top;
+      localX = ax + mapwrap.scrollLeft;
+      localY = ay + mapwrap.scrollTop;
+    }
+    mapstage.style.position = "absolute";
+    mapstage.style.left = "0";
+    mapstage.style.top = "0";
+    mapstage.style.width = viewW + "px";
+    mapstage.style.height = baseH + "px";
+    mapstage.style.transformOrigin = "0 0";
+    mapstage.style.transform = "scale(" + scale + ")";
+    mapsizer.style.width = Math.round(viewW * scale) + "px";
+    mapsizer.style.height = Math.round(baseH * scale) + "px";
+    mapwrap.style.height = baseH + "px";
+    if (anchor) {
+      const k = scale / prev;
+      mapwrap.scrollLeft = localX * k - ax;
+      mapwrap.scrollTop = localY * k - ay;
+    }
+  }
+  function centerAnchor() {
+    const rect = mapwrap.getBoundingClientRect();
+    return { x: rect.left + mapwrap.clientWidth / 2, y: rect.top + mapwrap.clientHeight / 2 };
+  }
+  zoomIn.onclick = () => applyScale(scale * 1.25, centerAnchor());
+  zoomOut.onclick = () => applyScale(scale / 1.25, centerAnchor());
+  zoomReset.onclick = () => {
+    mapwrap.scrollLeft = 0;
+    mapwrap.scrollTop = 0;
+    applyScale(1);
+  };
+  if (mapImg.complete && mapImg.naturalWidth) applyScale(1);
+  mapImg.addEventListener("load", () => applyScale(scale));
+  const observer = new ResizeObserver(() => {
+    if (!mapwrap.isConnected) { observer.disconnect(); return; }
+    applyScale(scale);
+  });
+  mapObservers.push(observer);
+  observer.observe(mapwrap);
+  mapwrap.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    applyScale(scale * factor, { x: event.clientX, y: event.clientY });
+  }, { passive: false });
+  let drag = null;
+  function onDragMove(event) {
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    mapwrap.scrollLeft = drag.sl - dx;
+    mapwrap.scrollTop = drag.st - dy;
+  }
+  function onDragEnd(event) {
+    if (!drag || drag.id !== event.pointerId) return;
+    const moved = drag.moved;
+    drag = null;
+    mapwrap.classList.remove("dragging");
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragEnd);
+    window.removeEventListener("pointercancel", onDragEnd);
+    if (!moved) return;
+    const stop = (clickEvent) => {
+      clickEvent.preventDefault();
+      clickEvent.stopPropagation();
+      mapwrap.removeEventListener("click", stop, true);
+    };
+    mapwrap.addEventListener("click", stop, true);
+    setTimeout(() => mapwrap.removeEventListener("click", stop, true), 0);
+  }
+  mapwrap.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if (!event.target.closest(".mapstage")) return;
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, sl: mapwrap.scrollLeft, st: mapwrap.scrollTop, moved: false };
+    mapwrap.classList.add("dragging");
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
+    window.addEventListener("pointercancel", onDragEnd);
+  });
+}
 function open(row) {
+  clearMapZoom();
   current = row;
   if (row) lastByMode[mode] = row;
   if (mode === "tables") {
@@ -2592,13 +2821,18 @@ function open(row) {
   } else if (mode === "sources") {
     const blocks = row.refs.map(ref => {
       const table = tableByEnum[ref.table];
-      const drops = table ? flattenDrops(table, 1, 0, new Set()).sort((a, b) => b.chance - a.chance) : [];
+      let drops = table ? flattenDrops(table, 1, 0, new Set()) : [];
+      if (row.category === "怪物") drops = mergeGearDrops(drops);
+      drops.sort((a, b) => b.chance - a.chance);
       const body = drops.map(drop => {
         const what = drop.kind === "table"
           ? (sourceForTable(drop.enumName) ? '<a data-loot="'+drop.enumName+'">'+named(drop.title, drop.enumName)+'</a>' : named(drop.title, drop.enumName))
           : '<a data-item="'+drop.id+'">'+icon(drop.icon, drop.title)+' '+drop.title+'</a>'+(drop.recipe ? ' <span class="tag">配方 '+drop.recipeId+'</span>' : '');
+        const chanceCell = drop.oddsText
+          ? drop.oddsText + '<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div>'
+          : formatPct(drop.chance)+'<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div>';
         const extra = (drop.rarity ? drop.rarity + " " : "") + (drop.flags || []).map(flag => '<span class="tag">'+flag+'</span>').join("");
-        return '<tr><td>'+what+'</td><td>'+(drop.amount||"")+'</td><td>'+formatPct(drop.chance)+'<div class="bar"><span style="width:'+Math.max(2, Math.min(100, drop.chance * 100))+'%"></span></div></td><td>'+extra+'</td></tr>';
+        return '<tr><td>'+what+'</td><td>'+(drop.amount||"")+'</td><td>'+chanceCell+'</td><td>'+extra+'</td></tr>';
       }).join("");
       return '<h3>'+named((table && table.title) || ref.title, (table && table.enumName) || ref.table)+'</h3>'
         + '<table><thead><tr><th>掉落</th><th>数量</th><th>几率</th><th>稀有度 / 标记</th></tr></thead><tbody>'+body+'</tbody></table>';
@@ -2607,6 +2841,7 @@ function open(row) {
     const spots = spawnMaps(row);
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, sourceLabel(row))+'<div><h2>'+sourceLabel(row).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]))+'</h2><div class="muted">'+row.category+'</div>'+(where ? '<p>'+where+'</p>' : '')+'</div></div>' + combatBlock(row) + (spots ? '<h3>可能刷新</h3>'+spots : '') + blocks;
     bindJumps(detailEl);
+    detailEl.querySelectorAll(".ground-zoom").forEach(bindMapZoom);
   } else if (mode === "items") {
     const from = [];
     for (const source of db.sources) {
@@ -2650,6 +2885,7 @@ function open(row) {
       + groundTable
       + (from.length || !ground.length ? dropTable : "");
     bindJumps(detailEl);
+    detailEl.querySelectorAll(".ground-zoom").forEach(bindMapZoom);
   } else if (mode === "quests") {
     const itemLink = (id) => {
       const title = itemTitle(id);
@@ -2918,117 +3154,7 @@ function open(row) {
     applyGround();
     applyNpcs();
     applyBosses();
-    const mapwrap = detailEl.querySelector(".mapwrap");
-    const mapstage = detailEl.querySelector(".mapstage");
-    const mapsizer = detailEl.querySelector(".mapsizer");
-    const zoomReadout = detailEl.querySelector(".zoom-readout");
-    const zoomIn = detailEl.querySelector('[data-zoom="in"]');
-    const zoomOut = detailEl.querySelector('[data-zoom="out"]');
-    const zoomReset = detailEl.querySelector('[data-zoom="reset"]');
-    const mapImg = mapstage.querySelector("img");
-    let scale = 1;
-    let fitted = "";
-    const minScale = 1;
-    const maxScale = 8;
-    function applyScale(next, anchor) {
-      const prev = scale || 1;
-      scale = Math.min(maxScale, Math.max(minScale, next));
-      zoomReadout.textContent = Math.round(scale * 100) + "%";
-      zoomIn.disabled = scale >= maxScale - 0.001;
-      zoomOut.disabled = scale <= minScale + 0.001;
-      const viewW = mapwrap.clientWidth;
-      if (!viewW || !mapImg.naturalWidth) return;
-      const baseH = Math.max(1, Math.round(viewW * mapImg.naturalHeight / mapImg.naturalWidth));
-      const box = viewW + "x" + baseH + "@" + scale;
-      if (!anchor && box === fitted) return;
-      fitted = box;
-      let ax = 0;
-      let ay = 0;
-      let localX = 0;
-      let localY = 0;
-      if (anchor) {
-        const rect = mapwrap.getBoundingClientRect();
-        ax = anchor.x - rect.left;
-        ay = anchor.y - rect.top;
-        localX = ax + mapwrap.scrollLeft;
-        localY = ay + mapwrap.scrollTop;
-      }
-      mapstage.style.position = "absolute";
-      mapstage.style.left = "0";
-      mapstage.style.top = "0";
-      mapstage.style.width = viewW + "px";
-      mapstage.style.height = baseH + "px";
-      mapstage.style.transformOrigin = "0 0";
-      mapstage.style.transform = "scale(" + scale + ")";
-      mapsizer.style.width = Math.round(viewW * scale) + "px";
-      mapsizer.style.height = Math.round(baseH * scale) + "px";
-      mapwrap.style.height = baseH + "px";
-      if (anchor) {
-        const k = scale / prev;
-        mapwrap.scrollLeft = localX * k - ax;
-        mapwrap.scrollTop = localY * k - ay;
-      }
-    }
-    function centerAnchor() {
-      const rect = mapwrap.getBoundingClientRect();
-      return { x: rect.left + mapwrap.clientWidth / 2, y: rect.top + mapwrap.clientHeight / 2 };
-    }
-    zoomIn.onclick = () => applyScale(scale * 1.25, centerAnchor());
-    zoomOut.onclick = () => applyScale(scale / 1.25, centerAnchor());
-    zoomReset.onclick = () => {
-      mapwrap.scrollLeft = 0;
-      mapwrap.scrollTop = 0;
-      applyScale(1);
-    };
-    if (mapImg.complete && mapImg.naturalWidth) applyScale(1);
-    mapImg.addEventListener("load", () => applyScale(scale));
-    if (mapObserver) mapObserver.disconnect();
-    mapObserver = new ResizeObserver(() => {
-      if (!mapwrap.isConnected) { mapObserver.disconnect(); mapObserver = null; return; }
-      applyScale(scale);
-    });
-    mapObserver.observe(mapwrap);
-    mapwrap.addEventListener("wheel", (event) => {
-      event.preventDefault();
-      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
-      applyScale(scale * factor, { x: event.clientX, y: event.clientY });
-    }, { passive: false });
-    let drag = null;
-    function onDragMove(event) {
-      if (!drag || drag.id !== event.pointerId) return;
-      const dx = event.clientX - drag.x;
-      const dy = event.clientY - drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
-      if (!drag.moved) return;
-      mapwrap.scrollLeft = drag.sl - dx;
-      mapwrap.scrollTop = drag.st - dy;
-    }
-    function onDragEnd(event) {
-      if (!drag || drag.id !== event.pointerId) return;
-      const moved = drag.moved;
-      drag = null;
-      mapwrap.classList.remove("dragging");
-      window.removeEventListener("pointermove", onDragMove);
-      window.removeEventListener("pointerup", onDragEnd);
-      window.removeEventListener("pointercancel", onDragEnd);
-      if (!moved) return;
-      const stop = (clickEvent) => {
-        clickEvent.preventDefault();
-        clickEvent.stopPropagation();
-        mapwrap.removeEventListener("click", stop, true);
-      };
-      mapwrap.addEventListener("click", stop, true);
-      setTimeout(() => mapwrap.removeEventListener("click", stop, true), 0);
-    }
-    mapwrap.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
-      if (!event.target.closest(".mapstage")) return;
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, sl: mapwrap.scrollLeft, st: mapwrap.scrollTop, moved: false };
-      mapwrap.classList.add("dragging");
-      window.addEventListener("pointermove", onDragMove);
-      window.addEventListener("pointerup", onDragEnd);
-      window.addEventListener("pointercancel", onDragEnd);
-    });
+    bindMapZoom(detailEl);
   }
   detailEl.scrollTop = 0;
 }
