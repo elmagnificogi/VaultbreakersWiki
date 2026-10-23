@@ -9,6 +9,7 @@ const { collectCodex } = require("./codex");
 const { attachCombat } = require("./combat");
 const { attachSalvage } = require("./salvage");
 const { fillCreaturePortraits, fillNpcPortraits } = require("./render-creatures");
+const { decode: decodeQuestPack, questPayload } = require("./quests");
 
 const ROOT = __dirname;
 const GAME = path.resolve(ROOT, "..");
@@ -597,6 +598,84 @@ function collectQuestNeeds() {
       needs.get(itemId).push({ quest: title, id: questId, kind: objective.Optional ? kind + "（可选）" : kind, count: amount });
     }
   }
+  const tierLabel = textOf("BuildingUpgradeTierValue");
+  const levelLabel = textOf("PerksLevelNumber");
+  const havenName = chinese(textOf("MapSelectionName_Haven"));
+  const placeKeys = {
+    Library: ["BuildingName_ResearchStation"],
+    CommandtableBuilding: ["Name_CommandTable_NoIcon"],
+    AdvancedNPC_ArcslotConduit: ["BuildingName_ArcSlotConduit"],
+    VulkarynShop: ["VulkarynShopName"],
+    FireplaceInLobby: ["Name_Fireplace"],
+    AshenclawFurnace: ["Name_AdvancedNPC_AshenclawFurnace"],
+    Hatchery: ["Name_AdvancedNPC_Hatchery"],
+  };
+  const placeName = (enumName) => {
+    const keys = [...(placeKeys[enumName] || []), "Name_" + enumName, "BuildingName_" + enumName];
+    for (const key of keys) {
+      const text = chinese(textOf(key));
+      if (text && !text.startsWith("解锁") && !/[A-Za-z]/.test(text)) return text;
+    }
+    return "";
+  };
+  const upgradeTitle = (enumName, english) => {
+    const place = placeName(enumName);
+    if (!place) return "";
+    const tier = /Tier\s+(\d+)/i.exec(english || "");
+    if (tier && tierLabel.includes("{0}")) return place + " " + tierLabel.replace("{0}", tier[1]);
+    const level = /Level\s+(\d+)/i.exec(english || "");
+    if (level && levelLabel.includes("{0}")) return place + " " + levelLabel.replace("{0}", level[1]);
+    return place;
+  };
+  const packed = decodeQuestPack(questPayload(loadBundle(bundleForAddress("Artifacts.artifactpack.bytes"))), 0).value[0];
+  let upgradeQuests = 0;
+  let upgradeSkipped = 0;
+  for (const raw of packed) {
+    if ((raw[11] | 0) !== 4) continue;
+    const questId = String(raw[0] || "");
+    const enumName = npcEnum.map[String(raw[7] | 0)] || "";
+    const title = upgradeTitle(enumName, String(raw[2] || ""));
+    if (!questId || !title) {
+      upgradeSkipped++;
+      continue;
+    }
+    const giver = npcName(raw[7]) || placeName(enumName);
+    if (!questSeen.has(questId)) {
+      questSeen.add(questId);
+      const steps = [];
+      const stepSeen = new Set();
+      const areas = [];
+      const flags = raw[5] | 0;
+      for (const [flag, name] of areaName) if (name && (flags & flag)) areas.push(name);
+      if (!areas.length && havenName) areas.push(havenName);
+      for (const objective of raw[44] || []) {
+        const kind = objective[1] === 18 ? QUEST_NEED[14] : QUEST_NEED[objective[1]];
+        const itemId = objective[5] | 0;
+        if (!kind || itemId <= 0) continue;
+        const amount = objective[2] > 0 ? objective[2] : 1;
+        const stepKey = kind + "|" + itemId + "|" + amount;
+        if (stepSeen.has(stepKey)) continue;
+        stepSeen.add(stepKey);
+        const optional = objective[17] && !objective[18];
+        steps.push({ kind: optional ? kind + "（可选）" : kind, item: itemId, count: amount });
+      }
+      quests.push({ id: questId, title, description: "", handIn: "", giver, turnIn: "", areas, steps, rewards: [] });
+      upgradeQuests++;
+    }
+    for (const objective of raw[44] || []) {
+      const kind = objective[1] === 18 ? QUEST_NEED[14] : QUEST_NEED[objective[1]];
+      const itemId = objective[5] | 0;
+      if (!kind || itemId <= 0) continue;
+      const amount = objective[2] > 0 ? objective[2] : 1;
+      const key = questId + "|" + itemId + "|" + objective[1] + "|" + amount;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!needs.has(itemId)) needs.set(itemId, []);
+      const optional = objective[17] && !objective[18];
+      needs.get(itemId).push({ quest: title, id: questId, kind: optional ? kind + "（可选）" : kind, count: amount });
+    }
+  }
+  console.log("upgrade quests", upgradeQuests, "skipped", upgradeSkipped);
   for (const rows of needs.values()) rows.sort((a, b) => a.quest.localeCompare(b.quest, "zh-CN") || a.kind.localeCompare(b.kind, "zh-CN"));
   quests.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
   return { needs, quests };
@@ -1821,7 +1900,7 @@ function writeHtml(db) {
   <div>
     <h1>龙窟破坏者WIKI</h1>
     <p>从本地客户端配置和贴图解出。物品、怪物、地点和环境名称使用游戏内简体中文。掉落表 ${db.dropTables.length} 张，关联来源 ${db.sources.length} 个，地图 ${(db.maps || []).length} 张，角色 ${(db.characters || []).length} 个，技能 ${(db.skills || []).length} 个，装备 ${(db.gear || []).length} 件，任务 ${(db.quests || []).length} 个，制作图纸 ${recipeCount} 张。</p>
-    <p class="meta">作者 elmagnifico · 版本 v0.6 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
+    <p class="meta">作者 elmagnifico · 版本 v0.7 · 对应游戏版本 2.0.2244.110866（Steam build 25959928） <a class="gh" href="https://github.com/elmagnificogi/VaultbreakersWiki" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>开源</a></p>
   </div>
   <div class="toolbar">
     <div class="search">
@@ -2835,6 +2914,7 @@ function bindJumps(root) {
   root.querySelectorAll("[data-gear]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.gear || []).find(g => String(g.id) === a.dataset.gear); if (row) show("gear", row); });
   root.querySelectorAll("[data-recipe]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = recipeFor(a.dataset.recipe); if (row) show("recipes", row); });
   root.querySelectorAll("[data-map]").forEach(a => a.onclick = (event) => { event.preventDefault(); const map = (db.maps || []).find(m => m.id === a.dataset.map); if (map) show("maps", map); });
+  root.querySelectorAll("[data-quest]").forEach(a => a.onclick = (event) => { event.preventDefault(); const row = (db.quests || []).find(q => q.id === a.dataset.quest); if (row) show("quests", row); });
 }
 function clearMapZoom() {
   for (const observer of mapObservers) observer.disconnect();
@@ -3046,9 +3126,10 @@ function open(row) {
         const item = src.item && (db.items || []).find(it => String(it.id) === String(src.item));
         const gear = !item && src.item && (db.gear || []).find(g => String(g.id) === String(src.item));
         const name = item ? '<a data-item="'+item.id+'">'+esc(item.title)+'</a>' : gear ? '<a data-gear="'+gear.id+'">'+esc(gear.title)+'</a>' : esc(src.pool || src.title || "");
-        return '<tr><td>'+name+'</td><td>'+esc(src.rarity || "")+'</td><td>'+(src.chance ? "有几率" : src.count)+'</td></tr>';
+        const amountCell = src.chance ? ("有几率" + (src.share ? " · 抽中后 " + formatPct(src.share) : "")) : src.count;
+        return '<tr><td>'+name+'</td><td>'+esc(src.rarity || "")+'</td><td>'+amountCell+'</td></tr>';
       }).join("")
-      + '</tbody></table>' + (salvage.some(src => src.chance) ? '<p class="muted">有几率的来源是拆解时额外可能开出的，不是每次都有。</p>' : "") : "";
+      + '</tbody></table>' + (salvage.some(src => src.chance) ? '<p class="muted">有几率的来源不是每次都有。抽中后的百分比，是这次额外掉落里分到它的比例。</p>' : "") : "";
     const ground = groundSpots(row.id);
     const groundTable = ground.length ? '<h3>地图上的固定搜刮</h3>'+groundMaps(ground)+'<p class="muted">方块是场景里写死的位置，每次都在原地，不是箱子里开出来的。</p>' : "";
     const recipeLink = recipeFor(row.id) ? '<p><a data-recipe="'+row.id+'">查看制作图纸</a></p>' : "";
@@ -3137,11 +3218,30 @@ function open(row) {
       const skill = (db.skills || []).find(s => s.name === name);
       return skill ? '<a data-skill="'+esc(skill.name)+'">'+esc(skill.title)+'</a>' : "";
     }).filter(Boolean).join("、");
+    const gearPoolName = { 2184: "拆解常见装备", 2185: "拆解罕见装备", 2186: "拆解稀有装备", 2187: "拆解卓越装备", 2188: "拆解传奇装备" };
+    const yieldRows = (row.salvageYields || []).map(yieldRow => {
+      const fixed = (yieldRow.items || []).map(part => {
+        const item = (db.items || []).find(it => String(it.id) === String(part.item));
+        const name = item ? '<a data-item="'+item.id+'">'+esc(item.title)+'</a>' : "";
+        return name ? name + " ×" + part.count : "";
+      }).filter(Boolean).join("、");
+      const table = (db.dropTables || []).find(t => t.id === yieldRow.extraTable);
+      const extra = table ? table.entries.filter(entry => entry.outcome !== 1 && entry.item).map(entry => {
+        const item = (db.items || []).find(it => String(it.id) === String(entry.item));
+        if (!item) return "";
+        return '<a data-item="'+item.id+'">'+esc(item.title)+'</a> '+formatPct(entryPortion(table, entry));
+      }).filter(Boolean).join("、") : "";
+      if (!fixed && !extra) return "";
+      const extraCell = extra ? (gearPoolName[yieldRow.extraTable] || table.title) + "：" + extra : "";
+      return '<tr><td>'+esc(yieldRow.rarity || "")+'</td><td>'+(fixed || "")+'</td><td>'+extraCell+'</td></tr>';
+    }).filter(Boolean).join("");
+    const yieldTable = yieldRows ? '<h3>拆解可以得到</h3><table><thead><tr><th>品质</th><th>必定得到</th><th>额外可能</th></tr></thead><tbody>'+yieldRows+'</tbody></table><p class="muted">额外一列要再掷一次才会开出来。百分比是这次额外掉落里分到它的比例。</p>' : "";
     detailEl.innerHTML = '<div class="hero">'+icon(row.icon, row.title)+'<div><h2>'+esc(row.title)+'</h2><div class="muted">'+esc([row.slot, row.rarity].filter(Boolean).join(" · "))+'</div>'+(classes ? '<p>'+classes+'</p>' : '')+'</div></div>'
       + (row.description ? '<p>'+esc(row.description)+'</p>' : '')
       + lines(labels.base, row.base)
       + lines(labels.special, row.forced)
       + lines(labels.random, row.pool)
+      + yieldTable
       + (skillLinks ? '<p>'+skillLinks+'</p>' : '')
       + (recipeFor(row.id) ? '<p><a data-recipe="'+esc(row.id)+'">查看制作图纸</a></p>' : '')
       + (db.items && db.items.some(it => String(it.id) === String(row.id)) ? '<p><a data-item="'+esc(row.id)+'">'+esc(row.title)+'</a></p>' : '');

@@ -1,6 +1,20 @@
 const { readRecords, gameplayBytes } = require("./combat");
 
 const RARITY = ["", "常见", "罕见", "稀有", "卓越", "传奇", "任务物品", "诅咒物品"];
+const GEAR_POOL = {
+  2184: "拆解常见装备",
+  2185: "拆解罕见装备",
+  2186: "拆解稀有装备",
+  2187: "拆解卓越装备",
+  2188: "拆解传奇装备",
+};
+
+function tableShare(table, entry) {
+  if (!table || entry.dropMode === 1) return (entry.percent || 0) / 100;
+  const weightSum = table.totalWeight || (table.entries || []).filter((row) => row.dropMode !== 1).reduce((sum, row) => sum + row.weight, 0);
+  if (!weightSum) return 0;
+  return entry.weight / weightSum;
+}
 
 function readSalvage(blob) {
   if (!blob || blob.length < 0x450) return null;
@@ -34,6 +48,8 @@ function attachSalvage(items, dropTables, named) {
   for (const row of named || []) if (row && row.id != null && row.title) titleOf.set(row.id, row.title);
   for (const item of items) if (item && item.id != null && item.title) titleOf.set(item.id, item.title);
   const tableById = new Map((dropTables || []).map((table) => [table.id, table]));
+  const gearIds = new Set((named || []).filter((row) => row && row.id != null).map((row) => row.id));
+  const yieldsById = new Map();
   const incoming = new Map();
   const seen = new Set();
   const push = (itemId, row) => {
@@ -50,12 +66,14 @@ function attachSalvage(items, dropTables, named) {
     const parsed = readSalvage(value.blob);
     if (!parsed) continue;
     const sourceTitle = titleOf.get(parsed.itemType) || "";
+    const yields = [];
     for (const row of parsed.rows) {
       const rarity = RARITY[row.rarity] || "";
       if (sourceTitle) {
         for (const product of row.items) push(product.item, { item: parsed.itemType, title: sourceTitle, rarity, count: product.amount });
         if (row.extraChance > 0 && row.extraItem > 0) push(row.extraItem, { item: parsed.itemType, title: sourceTitle, rarity, chance: true });
       }
+      if (row.items.length || row.extraTable > 0) yields.push({ rarity, items: row.items.map((product) => ({ item: product.item, count: product.amount })), extraTable: row.extraTable || 0 });
       if (row.extraChance > 0 && row.extraTable > 0) {
         const table = tableById.get(row.extraTable);
         if (!table) continue;
@@ -64,13 +82,23 @@ function attachSalvage(items, dropTables, named) {
           const key = entry.item + "|" + table.id;
           if (poolSeen.has(key)) continue;
           poolSeen.add(key);
-          push(entry.item, { pool: table.title, chance: true });
+          const share = tableShare(table, entry);
+          push(entry.item, { pool: GEAR_POOL[table.id] || table.title, chance: true, share: Math.round(share * 1000) / 1000 });
         }
       }
     }
+    if (gearIds.has(parsed.itemType) && yields.length) yieldsById.set(parsed.itemType, yields);
   }
   const order = new Map(RARITY.map((name, index) => [name, index]));
   let linked = 0;
+  let gearYields = 0;
+  for (const gear of named || []) {
+    delete gear.salvageYields;
+    const yields = yieldsById.get(gear.id);
+    if (!yields) continue;
+    gear.salvageYields = yields;
+    gearYields++;
+  }
   for (const item of items) {
     delete item.salvage;
     const rows = incoming.get(item.id);
@@ -82,7 +110,7 @@ function attachSalvage(items, dropTables, named) {
     item.salvage = rows;
     linked++;
   }
-  console.log("salvage items", linked);
+  console.log("salvage items", linked, "gear yields", gearYields);
 }
 
 module.exports = { attachSalvage };

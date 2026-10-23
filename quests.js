@@ -261,4 +261,4 @@ function collectQuests(options) {
   });
 }
 
-module.exports = { collectQuests };
+module.exports = { collectQuests, decode, questPayload };
