@@ -1324,6 +1324,21 @@ function collectActors(def) {
   return { npcs: dedupe(npcs), bosses: dedupe(bosses) };
 }
 
+function collectShopkeeperRoute(def) {
+  if (def.id !== "refinery") return [];
+  const entry = authoringEntries(def).find((row) => row[0] === "Authored_Spawn_ScratShopkeeper_Named");
+  if (!entry) return [];
+  const route = patrolRoute(entry, mapFrame(def));
+  if (route.length < 2) return [];
+  return [{
+    token: "ScratShopkeeper_Named",
+    fallback: "ScratShopkeeper",
+    left: route[0].left,
+    top: route[0].top,
+    path: route,
+  }];
+}
+
 function readMessagePack(view, at) {
   const b = view[at];
   if (b <= 0x7f) return { v: b, at: at + 1 };
@@ -1624,6 +1639,7 @@ function extractGameMaps(byKey) {
     const regions = collectRegions(def);
     const entrances = collectEntrances(def);
     const actors = collectActors(def);
+    actors.npcs.push(...collectShopkeeperRoute(def));
     const links = collectTeleportLinks(def, byKey);
     const pickups = collectItemPickups(def);
     console.log("map", title, "pins", pins.length, "regions", regions.length, "entrances", entrances.length, "npcs", actors.npcs.length, "bosses", actors.bosses.length, "paths", actors.bosses.filter((boss) => boss.path.length >= 2).length, "links", links.length, "pickups", pickups.length);
@@ -1632,4 +1648,4 @@ function extractGameMaps(byKey) {
   return maps;
 }
 
-module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectSpawns, collectLootPoints, collectItemPickups, collectTeleportLinks, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };
+module.exports = { extractGameMaps, collectRegions, collectEntrances, collectActors, collectShopkeeperRoute, collectSpawns, collectLootPoints, collectItemPickups, collectTeleportLinks, MAP_DEFS, bundleInfo, extractRange, asFloat, BUNDLE_DIR };

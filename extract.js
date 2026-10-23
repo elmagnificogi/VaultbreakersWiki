@@ -1809,6 +1809,10 @@ function writeHtml(db) {
   .rules p { margin:6px 0 8px; }
   .rules table { max-width:920px; margin:8px 0 14px; }
   .rules td { vertical-align:top; }
+  .medals { display:flex; gap:28px; margin:8px 0 14px; }
+  .medals figure { margin:0; }
+  .medals img { width:72px; height:72px; object-fit:contain; background:#141820; border-radius:8px; display:block; }
+  .medals figcaption { margin-top:4px; text-align:center; color:var(--muted); }
   @media (max-width: 860px) { html { overflow:auto; } body { height:auto; overflow:auto; display:block; } main { display:block; } aside, section { overflow:visible; } }
 </style>
 </head>
@@ -1974,6 +1978,11 @@ function writeHtml(db) {
         <tr><td>噩梦</td><td>3 倍</td><td>1.4 倍</td><td>1.4 倍</td><td>连续晕它会越来越难</td></tr>
       </tbody>
     </table>
+    <p>变成精英或噩梦之后，怪头上会多一枚勋章。普通怪没有这枚勋章。两枚都是外围一圈尖刺的骷髅，样子一样，颜色不同：精英偏冷，是浅蓝色；噩梦偏暖，是铜色。噩梦的名字也换成暖色，上沿近乎白，下沿是更深的铜色。</p>
+    <div class="medals">
+      <figure><img src="icons/EliteSkull.png" alt="精英勋章"><figcaption>精英</figcaption></figure>
+      <figure><img src="icons/NightmareSkull.png" alt="噩梦勋章"><figcaption>噩梦</figcaption></figure>
+    </div>
     <p>同一只怪只会变成其中一种，不会先变精英再叠成噩梦。没变成的普通怪，单排、双排、三排的血量一样。带 Boss 标记的怪没有另一套加成，双排就是上表的精英，三排就是上表的噩梦。</p>
     <p>举例：假如一只狼的标记是「低」。单排它就是普通狼。双排大约 85% 变成精英，血量和伤害按上表变高，剩下 15% 还是普通狼。三排大约一半变成噩梦，45% 变成精英，只有 5% 还是普通狼。头狼是另一只怪，不是这只狼变出来的。</p>
     <p>所以双排时，你会觉得一部分敌人比单排更强，也可能遇到单排或双排的玩家。三排时，更多敌人比单排、双排更强，也可能遇到单排、双排或三排的玩家。</p>
@@ -3207,6 +3216,7 @@ function open(row) {
       return '<g data-key="'+index+'" data-title="'+esc(region.title)+'">'+polys+'</g>';
     }).join("");
     const bossPaths = bosses.filter(boss => (boss.path || []).length >= 2).map(boss => '<polyline class="boss-path" data-key="'+esc(boss.title)+'" data-title="'+esc(boss.title)+'" points="'+boss.path.map(p => p.left+","+p.top).join(" ")+'" fill="none" stroke="#e74c3c" stroke-width="0.45" stroke-dasharray="1.2 0.7" stroke-linecap="round"></polyline>').join("");
+    const npcPaths = npcs.filter(actor => (actor.path || []).length >= 2).map(actor => '<polyline class="npc-path" data-key="'+esc(actor.title)+'" data-title="'+esc(actor.title)+'" points="'+actor.path.map(p => p.left+","+p.top).join(" ")+'" fill="none" stroke="#5dade2" stroke-width="0.45" stroke-dasharray="1.2 0.7" stroke-linecap="round"></polyline>').join("");
     const labels = regions.map((region, index) => '<div class="region-label" data-key="'+index+'" data-title="'+esc(region.title)+'" style="left:'+region.left+'%;top:'+region.top+'%;color:'+regionColors[index % regionColors.length]+'">'+esc(region.title)+'</div>').join("");
     const dots = row.pins.map(pin => {
       const shown = mapHit || pin.title.toLowerCase().includes(q);
@@ -3254,16 +3264,17 @@ function open(row) {
     const npcMarks = actorMarks(npcs, "npc");
     const bossMarks = actorMarks(bosses, "boss");
     const pathCount = bosses.filter(boss => (boss.path || []).length >= 2).length;
+    const npcPathCount = npcs.filter(actor => (actor.path || []).length >= 2).length;
     const note = [
       regions.length ? "区域轮廓 "+regions.length+" 块，沿遮罩贴图边缘描出，并去掉落在纯色空地上、以及横跨空地的部分。" : "",
       entrances.length ? "入口 "+entrances.length+" 处：菱形是场景里的传送门，方块是撤离点。" : "这张地图的场景里没有写死的传送门或撤离点。",
       links.length ? "同色圆点和连线是一组传送，两端互通。" : "",
       (row.pins.length || maybe.length) ? "实心点 "+row.pins.length+" 处是场景里摆好的搜刮点。虚线圆 "+maybe.length+" 处是配置里另外写下的位置，一局不一定都会刷出来。点标记打开对应掉落。" : (ground.length ? "" : "这张地图的场景里没有写好的搜刮点坐标。"),
       ground.length ? "方块 "+ground.length+" 处是直接放在地上的物品，位置是场景里写死的。点一下打开该物品。" : "",
-      npcs.length ? "NPC "+npcs.length+" 处，蓝点是场景里写死的位置。能对上来源的点可以打开该条目。" : "这张地图的场景里没有写死的 NPC 坐标。",
+      npcs.length ? "NPC "+npcs.length+" 处，蓝点是场景里写死的位置。能对上来源的点可以打开该条目。"+(npcPathCount ? "蓝色虚线是巡逻路线，按场景里写下的点顺序连接。" : "") : "这张地图的场景里没有写死的 NPC 坐标。",
       bosses.length ? "固定怪 "+bosses.length+" 处，红菱形是场景里写死、总会刷在原地的具名单位。"+(pathCount ? "虚线是同一只怪旁边分开的巡逻点。" : "") : "这张地图的场景里没有写死的具名怪物坐标。",
     ].filter(Boolean).join("");
-    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("传送", "link", linkLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("地上物品", "ground", groundLegend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+bossPaths+linkLines+'</svg>'+labels+gates+hops+dots+groundMarks+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
+    detailEl.innerHTML = '<h2>'+esc(row.title)+'</h2><p class="muted">'+note+'</p>'+legendBlock("区域", "region", regionLegend)+legendBlock("入口", "gate", gateLegend)+legendBlock("传送", "link", linkLegend)+legendBlock("搜刮点", "pin", legend)+legendBlock("地上物品", "ground", groundLegend)+legendBlock("NPC", "npc", npcLegend)+legendBlock("固定怪", "boss", bossLegend)+'<div class="mapzoom"><button type="button" class="zoom-btn" data-zoom="in">放大</button><button type="button" class="zoom-btn" data-zoom="out" disabled>缩小</button><button type="button" class="zoom-btn" data-zoom="reset">还原</button><span class="zoom-readout">100%</span></div><div class="mapwrap"><div class="mapstage"><img draggable="false" alt="'+esc(row.title)+'" src="'+row.image+'"><svg viewBox="0 0 100 100" preserveAspectRatio="none">'+shapes+npcPaths+bossPaths+linkLines+'</svg>'+labels+gates+hops+dots+groundMarks+npcMarks+bossMarks+'</div><div class="mapsizer"></div></div>';
     bindJumps(detailEl);
     function checkedKeys(selector) {
       const buttons = [...detailEl.querySelectorAll(selector)];
@@ -3298,7 +3309,7 @@ function open(row) {
     }
     function applyNpcs() {
       const picked = checkedKeys(".npc-filter");
-      detailEl.querySelectorAll(".mapstage .npc, .mapstage .npc-label").forEach(el => showIf(el, picked));
+      detailEl.querySelectorAll(".mapstage .npc, .mapstage .npc-label, .mapstage .npc-path").forEach(el => showIf(el, picked));
     }
     function applyBosses() {
       const picked = checkedKeys(".boss-filter");
