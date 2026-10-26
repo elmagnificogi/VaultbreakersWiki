@@ -6,7 +6,7 @@ const { parseSerialized, readObject, readValue, R } = require("./serialized");
 const { decodeTexture } = require("./dxt");
 const { extractGameMaps, collectSpawns, MAP_DEFS } = require("./maps");
 const { collectCodex } = require("./codex");
-const { attachCombat } = require("./combat");
+const { attachCombat, refineCreatureCategories, isCreatureCategory } = require("./combat");
 const { attachSalvage } = require("./salvage");
 const { fillCreaturePortraits, fillNpcPortraits } = require("./render-creatures");
 const { decode: decodeQuestPack, questPayload } = require("./quests");
@@ -386,10 +386,14 @@ function spawnUnit(name) {
   return unit.startsWith("Boss_") ? unit.slice(5) : unit;
 }
 
+function isCreatureSource(source) {
+  return isCreatureCategory(source && source.category);
+}
+
 function attachMonsterSpawns(sources, maps) {
   const owners = new Map();
   for (const source of sources) {
-    if (source.category !== "怪物") continue;
+    if (!isCreatureSource(source)) continue;
     delete source.spawns;
     const stem = String(source.asset || "").replace(/ConfigurationAsset$/, "");
     if (!stem) continue;
@@ -908,11 +912,13 @@ function main() {
         "UnitName_" + base,
         "Name_" + base,
         base + "Name",
+        "NamedItem" + base,
         "MapName_" + base,
         "Mapname_" + base,
         "BuildingName_" + base,
         "Name_AdvancedNPC_" + base,
-        "Name_AdvancedNpc_" + base
+        "Name_AdvancedNpc_" + base,
+        base
       );
     }
     for (const key of keys) {
@@ -1487,7 +1493,7 @@ function main() {
   }
   console.log(
     "monster portraits",
-    sources.filter((s) => s.category === "怪物" && s.icon).length,
+    sources.filter((s) => isCreatureCategory(s.category) && s.icon).length,
     "named",
     sources.filter((s) => s.portrait).length
   );
@@ -1527,6 +1533,8 @@ function main() {
   console.log("reading maps");
   const regionNameKeys = {
     "Area 1 Fume Pits": "MapName_FumePits",
+    "Area 3 Refinery": "MapName_Refinery",
+    "Area 4 Skyrig": "MapName_SnifflersSkyport",
     "Area 5 Shanty Town": "MapName_ShantyTown",
     "Area8 - PinecrestKeep": "MapName_PinecrestKeep",
     "Area8 - Pinecrest": "MapName_PinecrestVillage",
@@ -1541,6 +1549,9 @@ function main() {
     "Area3 - ScratAirship": "MapName_Airship",
     "Area4 - MageTower": "MapName_AncientTower",
     "Area1-Cave": "MapName_ElementalCave",
+    "Area2-OtherCave": "MapName_GaleheartHollow",
+    "Area5 - BearCave": "MapName_GrizzlyHollow",
+    "Area18 - Scrat Outer": "MapName_ScratOutpost",
     "Area 2 Warforge": "MapName_RatbosWarforge",
   };
   function regionTitle(raw) {
@@ -1601,17 +1612,22 @@ function main() {
     function actorAsset(token) {
       if (!token || token === "Boss" || token === "MiniBoss") return "";
       const needle = token.toLowerCase();
-      const hits = sources.filter((source) => (source.category === "怪物" || source.category === "工坊与商人") && (source.asset || "").toLowerCase().includes(needle));
+      const hits = sources.filter((source) => (isCreatureCategory(source.category) || source.category === "工坊与商人") && (source.asset || "").toLowerCase().includes(needle));
       return hits.length === 1 ? hits[0].asset : "";
     }
     const actorAliases = {
       Vulkaryn: ["VulkarynItemVendor", "VulkarynInMatch"],
-      Silverhook: ["SilverhookSam", "SilverhookSamInMatch"],
+      Silverhook: ["SilverhookSamQuartermaster", "SilverhookSam", "SilverhookSamInMatch"],
       Priestess: ["PriestessNpc", "PriestessInMatch"],
       Lanathar: ["LanatharLightbringer", "LanatharInMatch"],
       Gondrak: ["GondrakBlacksmith", "GondrakInMatch"],
-      Milloween: ["MilloweenInMatch"],
+      Milloween: ["Milloween", "MilloweenInMatch"],
       Vexxie: ["VexxieAlchemyCrafter", "VexxieInMatch"],
+      OldCrone: ["PinewoodNpc1", "GhostCrone"],
+      Wishy: ["PinewoodNpc2", "Wishy"],
+      Thalindra: ["Scout2Wolfswood", "Thalindra"],
+      Farstriker: ["Farstriker"],
+      CurrentBringer: ["Currentbringer", "CurrentBringer"],
       KingFisher: ["KingFisher"],
       Widow: ["Widow"],
       WerewolfMage: ["WerewolfMage"],
@@ -1623,10 +1639,29 @@ function main() {
       OldBear: ["OldBear"],
       GhostWerewolf: ["GhostWerewolf"],
       GhostEliteWolf: ["GhostEliteWolf"],
-      GhostCrone: ["AdvancedNPC_GhostCrone", "GhostCrone"],
+      GhostCrone: ["AdvancedNpc_GhostCrone", "GhostCrone"],
       ScratMechSuitMiniBoss: ["ScratMechSuitMiniBoss"],
+      SuccubusBoss: ["SuccubusBoss", "ShadowCasterStaffSuccubus"],
+      WreckTitan: ["WreckTitan"],
+    };
+    const actorDirectKeys = {
+      OldCrone: ["Name_PinewoodNpc1"],
+      Wishy: ["Name_PinewoodNpc2"],
+      Thalindra: ["Name_Scout2Wolfswood"],
+      Silverhook: ["Name_SilverhookSamQuartermaster"],
+      Milloween: ["Milloween"],
+      Farstriker: ["NamedItemFarstriker"],
+      CurrentBringer: ["NamedItemCurrentbringer"],
+      Widow: ["Widow"],
+      ScratMechSuitMiniBoss: ["ScratMechSuitMiniBoss"],
+      WreckTitan: ["WreckTitan"],
+      SuccubusBoss: ["ShadowCasterStaffSuccubus"],
     };
     function namedActor(token) {
+      for (const key of actorDirectKeys[token] || []) {
+        const text = tighten(byKey.get(key) || "");
+        if (text && /[\u4e00-\u9fff]/.test(text)) return text;
+      }
       const tries = [token].concat(actorAliases[token] || []);
       for (const key of tries) {
         const text = tighten(gameName(key));
@@ -1639,8 +1674,10 @@ function main() {
         const asset = actorAsset(actor.token);
         const source = asset ? sources.find((row) => row.asset === asset) : null;
         const sourceTitle = source && /[\u4e00-\u9fff]/.test(source.title) ? tighten(source.title) : "";
-        const title = namedActor(actor.token) || sourceTitle || actor.fallback || actor.token;
-        if (!title) return null;
+        let title = namedActor(actor.token) || sourceTitle || "";
+        if (!title && actor.fallback && /[\u4e00-\u9fff]/.test(actor.fallback)) title = actor.fallback;
+        if (!title || !/[\u4e00-\u9fff]/.test(title)) return null;
+        if (actor.token === "Boss" && title === "头目") return null;
         return {
           title,
           token: actor.token,
@@ -1706,6 +1743,7 @@ function main() {
   console.log("characters", codex.characters.length, "skills", codex.skills.length, "gear", codex.gear.length);
 
   attachCombat(sources);
+  refineCreatureCategories(sources);
 
   const questCatalog = collectQuestNeeds();
   const questNeeds = questCatalog.needs;
@@ -1878,16 +1916,19 @@ function writeHtml(db) {
   .opt-btn { cursor:pointer; border:1px solid var(--line); background:#1c2030; color:var(--text); border-radius:8px; padding:6px 10px; font:inherit; }
   .opt-btn:hover { border-color:var(--accent); color:var(--accent); }
   #opt-out { max-width:1180px; margin-top:8px; }
-  #rules { display:none; }
-  main.rules-mode { grid-template-columns: 1fr; }
-  main.rules-mode aside, main.rules-mode #detail, main.rules-mode #dps { display:none; }
-  main.rules-mode #rules { display:block; overflow:auto; }
-  .rules h2 { margin:22px 0 8px; font-size:20px; }
-  .rules h2:first-child { margin-top:0; }
-  .rules p, .rules li { max-width:920px; }
-  .rules p { margin:6px 0 8px; }
-  .rules table { max-width:920px; margin:8px 0 14px; }
-  .rules td { vertical-align:top; }
+  #rules, #walls { display:none; }
+  main.rules-mode, main.walls-mode { grid-template-columns: 1fr; }
+  main.rules-mode aside, main.rules-mode #detail, main.rules-mode #dps, main.rules-mode #walls { display:none; }
+  main.walls-mode aside, main.walls-mode #detail, main.walls-mode #dps, main.walls-mode #rules { display:none; }
+  main.rules-mode #rules, main.walls-mode #walls { display:block; overflow:auto; }
+  .rules h2, .walls h2 { margin:22px 0 8px; font-size:20px; }
+  .rules h2:first-child, .walls h2:first-child { margin-top:0; }
+  .rules p, .rules li, .walls p, .walls li { max-width:920px; }
+  .rules p, .walls p { margin:6px 0 8px; }
+  .rules ul, .walls ul, .rules ol, .walls ol { margin:6px 0 12px; padding-left:1.4em; max-width:920px; }
+  .rules li, .walls li { margin:4px 0; }
+  .rules table, .walls table { max-width:920px; margin:8px 0 14px; }
+  .rules td, .walls td { vertical-align:top; }
   .medals { display:flex; gap:28px; margin:8px 0 14px; }
   .medals figure { margin:0; }
   .medals img { width:72px; height:72px; object-fit:contain; background:#141820; border-radius:8px; display:block; }
@@ -1918,6 +1959,7 @@ function writeHtml(db) {
       <button id="tab-quests">任务</button>
       <button id="tab-maps">地图</button>
       <button id="tab-rules">难度与多人</button>
+      <button id="tab-walls">墙与门</button>
       <button id="tab-dps">速算</button>
     </div>
   </div>
@@ -2088,10 +2130,73 @@ function writeHtml(db) {
     <p>大部分物品都是这样，品质在物品上是固定的。掉落条目里那组稀有度权重，不拿来把它们拆成好几档。</p>
     <p>没有写死品质的装备才用这组权重。忍耐军靴就是这种。10% 进入装备掉落 1，里面的装备 1 占 16/74，这张子表合计 9，忍耐军靴占 1，约 0.24%。权重是常见 8000、罕见 1900、稀有 100。常见约 0.19%，罕见约 0.05%，稀有约 0.0024%。</p>
   </section>
+  <section id="walls" class="walls">
+    <h2>墙、门，和把门里的怪引出来</h2>
+    <p>地图上挡路的东西看起来都像墙，其实至少分两种。搞清这一点，有些「钥匙还没拿到、门打不开」的怪，仍然有机会在门外打到。</p>
+
+    <h2>先分清：实心墙，还是钥匙门</h2>
+    <table>
+      <thead>
+        <tr><th></th><th>你（玩家）</th><th>怪物</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>实心墙（高墙一类）</td>
+          <td>过不去</td>
+          <td>也过不去</td>
+        </tr>
+        <tr>
+          <td>钥匙门（要钥匙才能开的闸门）</td>
+          <td>没钥匙就进不去；关门会挡住你的移动</td>
+          <td>门关着也能穿过去追人（被嘲讽或拉住仇恨时）</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>一句话：钥匙门主要是卡玩家的；怪物不走「开门」这套，关着也能过。实心墙才是真·谁都穿不过。</p>
+    <p>游戏里常见的钥匙门包括：战争熔炉那两扇门、巴哈门、监狱牢门、电能门、部分藤蔓门和嘶科鼠门等。它们开法不同，但「挡人、不挡怪」这一点是一类的。</p>
+
+    <h2>怪为什么有时会自己出门</h2>
+    <p>怪被噪音、嘲讽或伤害拉住仇恨后，会朝目标走。目标在门外、并且离门够远时，隔在中间的是钥匙门，它往往会整只穿门追出来。</p>
+    <p>秘库炸弹就很适合干这个：说明里写了会发出噪音、惊动附近敌人。关键不是贴着门放，而是放在「离门远一点、但仍能吵到门里那只怪」的地方，最好靠墙，这样它的终点不在门洞上，才会真正出门。</p>
+
+    <h2>实战怎么引（新手版）</h2>
+    <ol>
+      <li>确认挡路的是钥匙门，不是一整圈实心墙。</li>
+      <li>人先离开门洞，不要堵在门口。</li>
+      <li>把秘库炸弹（或别的带嘲讽、噪音的东西）放在远离大门、但仍能吸引到那只怪的位置，通常贴着附近的墙更稳。</li>
+      <li>继续待在门外、离门远一点的地方，等它自己穿门追过来，再打。</li>
+    </ol>
+    <p>炸弹或人太靠近大门口时，怪的终点就在门缝上：它走到门边打一下，很容易又转身回家。把吸引点拉远，它才会整只跟出门。战争熔炉的破拆泰坦就是这个路数。</p>
+
+    <h2>打一下就跑：巡逻和「拴绳」</h2>
+    <p>很多怪有自己的活动范围，不像玩家那样可以满图追。追不到、路被卡住、嘲讽时间到了，它会回原位，仇恨也会清掉。这很像狗绳：绳不够长就拽回去。</p>
+    <p>所以门外磨的时候，常见情况是：引出来打一阵 → 它回去 → 再丢炸弹续一下。想省事，就尽量把它完整引到门外开阔地再打，而不是卡在门板上刮。</p>
+
+    <h2>还能用在哪</h2>
+    <p>同一类钥匙门，都可以按「远离门口放嘲讽物 + 人也不堵门」去试，例如：</p>
+    <ul>
+      <li>战争熔炉门后的破拆泰坦（要爪子脉冲传输器·战争熔炉才能正式开门）</li>
+      <li>巴哈门后的内容（要破月者咒印才能正式开门）</li>
+      <li>龙窟监狱牢门后的幽灵狼等（要灰爪法术反制才能正式开门）</li>
+      <li>其他要钥匙才能开、但外观是闸门而不是实心高墙的地方</li>
+    </ul>
+    <p>门后具体是哪只怪、好不好引，和地形、嘲讽距离有关，需要进游戏试。原则不变：有朝向你的钥匙门缝，才拉得动；四面实墙围死，炸弹也没用。</p>
+
+    <h2>做不到的事</h2>
+    <ul>
+      <li>隔着实心高墙把怪拉出来</li>
+      <li>人不拿钥匙就走进去拿门里的箱子和交互（怪能出，你还是进不去）</li>
+      <li>指望怪永远站在门口挨打（它仍可能回巢，需要再嘲讽或换地方打）</li>
+    </ul>
+    <p>正规流程仍是做任务、拿钥匙、开门。上面说的是：钥匙还没有、或 Demo 里暂时拿不到时，门外引怪的补救思路。</p>
+  </section>
 </main>
 <script id="db" type="application/json">${JSON.stringify(db).replace(/</g, "\\u003c")}</script>
 <script>
 const db = JSON.parse(document.getElementById("db").textContent);
+function isCreatureCategory(category) {
+  return category === "怪物" || category === "Boss" || category === "小头目" || category === "普通怪";
+}
 (function () {
   function num(id) {
     const el = document.getElementById(id);
@@ -2420,18 +2525,25 @@ function originKinds(enumName) {
   for (const parent of parentEnums[enumName] || []) for (const kind of originKinds(parent)) kinds.add(kind);
   return kinds;
 }
+function isCreatureKind(kind) {
+  return isCreatureCategory(kind);
+}
 function originTag(enumName) {
   const kinds = originKinds(enumName);
-  const mob = kinds.has("怪物");
+  const mob = [...kinds].some(isCreatureKind);
   const loot = kinds.has("搜刮点");
   if (mob && loot) return "怪物/搜刮";
-  if (mob) return "怪物";
+  if (kinds.has("Boss")) return "Boss";
+  if (kinds.has("小头目")) return "小头目";
+  if (kinds.has("普通怪") || kinds.has("怪物")) return "怪物";
   if (loot) return "搜刮";
   if (kinds.has("工坊与商人")) return "商人";
   return "";
 }
 function sourceTag(category) {
-  if (category === "怪物") return "怪物";
+  if (category === "Boss") return "Boss";
+  if (category === "小头目") return "小头目";
+  if (category === "普通怪" || category === "怪物") return "普通怪";
   if (category === "搜刮点") return "搜刮";
   if (category === "工坊与商人") return "商人";
   return "";
@@ -2669,7 +2781,18 @@ function rarityText(entry) {
 }
 function categoriesFor(kind) {
   const values = kind === "tables" ? db.dropTables.map(t => t.category) : kind === "sources" ? db.sources.map(s => s.category) : kind === "characters" ? (db.characters || []).map(c => c.origin) : kind === "skills" ? (db.skills || []).map(s => s.kind) : kind === "gear" ? (db.gear || []).map(g => g.slot) : kind === "recipes" ? recipes.map(r => r.kind) : kind === "quests" ? (db.quests || []).flatMap(q => q.areas || []) : [];
-  return ["全部", ...[...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), "zh"))];
+  const unique = [...new Set(values)].filter(Boolean);
+  if (kind === "sources") {
+    const order = ["Boss", "小头目", "普通怪", "搜刮点", "工坊与商人"];
+    unique.sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia >= 0 || ib >= 0) return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      return String(a).localeCompare(String(b), "zh");
+    });
+    return ["全部", ...unique];
+  }
+  return ["全部", ...unique.sort((a, b) => String(a).localeCompare(String(b), "zh"))];
 }
 function syncCats(preferred) {
   const cats = categoriesFor(mode);
@@ -2740,7 +2863,7 @@ function shown(text) {
   if (base.endsWith("·")) base = base.slice(0, -1);
   if (!base) return value;
   const hit = db.sources.some(s => {
-    if (s.title === base && (s.category === "怪物" || s.category === "搜刮点")) return true;
+    if (s.title === base && (isCreatureCategory(s.category) || s.category === "搜刮点")) return true;
     return s.category === "搜刮点" && (s.title === base + "·" + role || s.title === base + role);
   });
   return hit ? base : value;
@@ -3059,7 +3182,7 @@ function open(row) {
     const blocks = row.refs.map(ref => {
       const table = tableByEnum[ref.table];
       let drops = table ? flattenDrops(table, 1, 0, new Set()) : [];
-      if (row.category === "怪物") drops = mergeGearDrops(drops);
+      if (isCreatureCategory(row.category)) drops = mergeGearDrops(drops);
       drops.sort((a, b) => b.chance - a.chance);
       const body = drops.map(drop => {
         const what = drop.kind === "table"
@@ -3458,19 +3581,23 @@ function open(row) {
   }
   detailEl.scrollTop = 0;
 }
+function isSoloMode(kind) {
+  return kind === "dps" || kind === "rules" || kind === "walls";
+}
 function syncChrome() {
-  const solo = mode === "dps" || mode === "rules";
+  const solo = isSoloMode(mode);
   const main = document.querySelector("main");
   main.classList.toggle("dps-mode", mode === "dps");
   main.classList.toggle("rules-mode", mode === "rules");
+  main.classList.toggle("walls-mode", mode === "walls");
   document.querySelector(".search").hidden = solo;
   if (solo) catEl.hidden = true;
 }
 function setMode(next) {
   if (next === mode) return;
-  if (mode !== "dps" && mode !== "rules") listScroll[mode] = listEl.scrollTop;
+  if (!isSoloMode(mode)) listScroll[mode] = listEl.scrollTop;
   mode = next;
-  if (next === "dps" || next === "rules") {
+  if (isSoloMode(next)) {
     present(next, null);
     pushView();
     return;
@@ -3534,7 +3661,7 @@ function decodeState(hash) {
   if (!raw) return null;
   const parts = raw.split("/");
   const nextMode = parts[0];
-  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "quests", "recipes", "dps", "rules"].includes(nextMode)) return null;
+  if (!["tables", "sources", "items", "maps", "characters", "skills", "gear", "quests", "recipes", "dps", "rules", "walls"].includes(nextMode)) return null;
   let id = "";
   let q = "";
   let cat = "全部";
@@ -3570,8 +3697,8 @@ function replaceView() {
   writeState(viewState(), true);
 }
 function present(kind, row) {
-  if (listEl && mode !== kind && mode !== "dps" && mode !== "rules") listScroll[mode] = listEl.scrollTop;
-  if (kind === "dps" || kind === "rules") {
+  if (listEl && mode !== kind && !isSoloMode(mode)) listScroll[mode] = listEl.scrollTop;
+  if (isSoloMode(kind)) {
     mode = kind;
     document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("on"));
     document.getElementById("tab-" + kind).classList.add("on");
@@ -3608,9 +3735,9 @@ function applyView(state) {
   if (url === appliedUrl) return;
   appliedUrl = url;
   qEl.value = state.q || "";
-  if (listEl && mode !== state.mode && mode !== "dps" && mode !== "rules") listScroll[mode] = listEl.scrollTop;
+  if (listEl && mode !== state.mode && !isSoloMode(mode)) listScroll[mode] = listEl.scrollTop;
   mode = state.mode;
-  if (state.mode === "dps" || state.mode === "rules") {
+  if (isSoloMode(state.mode)) {
     present(state.mode, null);
     return;
   }
@@ -3659,6 +3786,7 @@ document.getElementById("tab-recipes").onclick = () => setMode("recipes");
 document.getElementById("tab-quests").onclick = () => setMode("quests");
 document.getElementById("tab-maps").onclick = () => setMode("maps");
 document.getElementById("tab-rules").onclick = () => setMode("rules");
+document.getElementById("tab-walls").onclick = () => setMode("walls");
 document.getElementById("tab-dps").onclick = () => setMode("dps");
 let searchTimer = 0;
 qEl.oninput = () => {
@@ -3703,8 +3831,8 @@ window.addEventListener("hashchange", () => {
 mode = "sources";
 {
   const saved = decodeState(location.hash);
-  const savedRow = saved && saved.mode !== "dps" && saved.mode !== "rules" && rowByKey(saved.id);
-  if (saved && (saved.mode === "dps" || saved.mode === "rules")) {
+  const savedRow = saved && !isSoloMode(saved.mode) && rowByKey(saved.id);
+  if (saved && isSoloMode(saved.mode)) {
     present(saved.mode, null);
   } else if (saved && savedRow) {
     qEl.value = saved.q || "";

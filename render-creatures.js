@@ -517,7 +517,7 @@ function flipPngHorizontal(png) {
 }
 
 function fillCreaturePortraits(sources) {
-  const pending = sources.filter((s) => s.category === "怪物" && !s.icon);
+  const pending = sources.filter((s) => (s.category === "怪物" || s.category === "Boss" || s.category === "小头目" || s.category === "普通怪") && !s.icon);
   const iconDir = path.join(ROOT, "icons");
   fs.mkdirSync(iconDir, { recursive: true });
   let made = 0;

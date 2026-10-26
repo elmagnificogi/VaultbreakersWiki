@@ -751,6 +751,16 @@ function describeAttack(record, byKey) {
   return attack;
 }
 
+function isCreatureCategory(category) {
+  return category === "怪物" || category === "Boss" || category === "小头目" || category === "普通怪";
+}
+
+function enemyKindFromCategory(enemyCategory) {
+  if (enemyCategory === 100) return "Boss";
+  if (enemyCategory === 10) return "小头目";
+  return "普通怪";
+}
+
 function attachCombat(sources) {
   const records = readRecords(gameplayBytes());
   const byName = new Map(records.map((record) => [record.name, record]));
@@ -760,7 +770,7 @@ function attachCombat(sources) {
   let titled = 0;
   let magic = 0;
   for (const source of sources) {
-    if (source.category !== "怪物") continue;
+    if (!isCreatureCategory(source.category)) continue;
     delete source.combat;
     const unit = byName.get(source.asset);
     const values = unit && unit.values.find((value) => value.type === "UnitConfigurationValues");
@@ -775,10 +785,13 @@ function attachCombat(sources) {
       if (attack.hits.some((hit) => hit.kind === "魔法")) magic++;
       attacks.push(attack);
     }
+    const enemyCategory = values.blob.readInt32LE(0x4);
     source.combat = {
       health: round(fp(values.blob, 0x18)),
       armor: 0,
       resist: 0,
+      enemyCategory,
+      enemyKind: enemyKindFromCategory(enemyCategory),
       attacks,
     };
     linked++;
@@ -786,4 +799,19 @@ function attachCombat(sources) {
   console.log("combat", linked, "named attacks", titled, "magic attacks", magic);
 }
 
-module.exports = { attachCombat, readRecords, gameplayBytes, chineseByKey };
+function refineCreatureCategories(sources) {
+  let boss = 0;
+  let mini = 0;
+  let normal = 0;
+  for (const source of sources) {
+    if (!isCreatureCategory(source.category)) continue;
+    const kind = (source.combat && source.combat.enemyKind) || "普通怪";
+    source.category = kind;
+    if (kind === "Boss") boss++;
+    else if (kind === "小头目") mini++;
+    else normal++;
+  }
+  console.log("creature categories", "Boss", boss, "小头目", mini, "普通怪", normal);
+}
+
+module.exports = { attachCombat, refineCreatureCategories, isCreatureCategory, readRecords, gameplayBytes, chineseByKey };

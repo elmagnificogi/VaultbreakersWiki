@@ -85,16 +85,12 @@ jobs:
           git push origin "$commit:refs/tags/web-${GITHUB_SHA}"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
-      - name: Name the release
-        id: rel
-        run: echo "name=网页 ${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: web-${{ github.sha }}
           target_commitish: ${{ steps.site.outputs.commit }}
-          name: ${{ steps.rel.outputs.name }}
+          name: ${{ steps.pack.outputs.archive }}
           make_latest: true
           fail_on_unmatched_files: true
           files: ${{ steps.pack.outputs.archive }}
